@@ -269,9 +269,7 @@
         var clean = new URL(input);
         clean.searchParams.delete("referer");
         var name = decodeURIComponent(u.pathname.split("/").pop() || "Brugge").replace(/\.m3u8.*$/i, "") || "XionLive";
-        var playableUrl = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:')
-          ? clean.href
-          : "xion://proxy?url=" + encodeURIComponent(clean.href) + "&referer=" + encodeURIComponent(referer);
+        var playableUrl = "xion://proxy?url=" + encodeURIComponent(clean.href) + "&referer=" + encodeURIComponent(referer);
         return { name: name, streamUrl: clean.href, referer: referer, playableUrl: playableUrl };
       } catch (e) {
         throw new Error("invalid m3u8 url");
@@ -419,9 +417,7 @@
     var token = encodeURIComponent(btoa(String.fromCharCode.apply(null, new Uint8Array(encrypted)))) + "a";
     var signedUrl = streamParsed.origin + "/token-" + token + streamParsed.pathname + streamParsed.search;
 
-    var playableUrl = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:')
-      ? signedUrl
-      : "xion://proxy?url=" + encodeURIComponent(signedUrl) + "&referer=" + encodeURIComponent(playerReferer);
+    var playableUrl = "xion://proxy?url=" + encodeURIComponent(signedUrl) + "&referer=" + encodeURIComponent(playerReferer);
 
     log("resolved stream:", stream.name);
     return {

@@ -390,10 +390,9 @@
       if (!url) return;
       hideError(); playBtn.disabled=true; playBtn.textContent='Resolving...'; closeMobilePanel();
       var defaultReferer = 'https://jack27eo.mpgreatestclgczbmiddle.my/';
-      var isStandalone = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:');
       if (mode==='m3u8'||(mode==='auto'&&isM3u8(url))) {
         var sn=url.split('/').pop().split('?')[0]||'stream';
-        var proxyUrl=isStandalone?url:'xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
+        var proxyUrl='xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
         currentData={playableUrl:proxyUrl,directUrl:url,referer:defaultReferer,name:sn,inputUrl:url};
         addToHistory(sn,url,proxyUrl); startPlayback(proxyUrl,sn); playBtn.disabled=false; playBtn.textContent='Play';
       } else if (mode==='match'||(mode==='auto'&&isMatchPage(url))) {
@@ -405,7 +404,7 @@
         .catch(function(e){showError(e.message||'Failed')}).finally(function(){playBtn.disabled=false;playBtn.textContent='Play'});
       } else {
         var sn=url.split('/').pop().split('?')[0]||'stream';
-        var proxyUrl=isStandalone?url:'xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
+        var proxyUrl='xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
         currentData={playableUrl:proxyUrl,directUrl:url,referer:defaultReferer,name:sn,inputUrl:url};
         addToHistory(sn,url,proxyUrl); startPlayback(proxyUrl,sn); playBtn.disabled=false; playBtn.textContent='Play';
       }
