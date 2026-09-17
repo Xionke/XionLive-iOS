@@ -284,13 +284,20 @@
 
     log("fetching match page");
     var pageResp = await apiFetch(input, buildHeaders(requestContext));
+    if (!pageResp.ok) throw new Error("Match page HTTP " + pageResp.status + " | " + input);
     var pageHtml = await pageResp.text();
-    var dataApiBaseUrl = parseDataApiBaseUrlFromPage(pageHtml);
-    var streamSiteDigit = parseStreamSiteDigitFromPage(pageHtml, input);
+    if (pageHtml.length < 100) throw new Error("Match page empty (" + pageHtml.length + " bytes) | " + input);
+    try {
+      var dataApiBaseUrl = parseDataApiBaseUrlFromPage(pageHtml);
+    } catch(e) { throw new Error("No data API in page | " + e.message + " | " + input); }
+    try {
+      var streamSiteDigit = parseStreamSiteDigitFromPage(pageHtml, input);
+    } catch(e) { throw new Error("No stream digit in page | " + e.message + " | " + input); }
     log("dataApi:", dataApiBaseUrl, "digit:", streamSiteDigit);
 
     log("fetching config");
     var configResp = await apiFetch(dataApiBaseUrl + "/api/common/params", buildHeaders(requestContext));
+    if (!configResp.ok) throw new Error("Config HTTP " + configResp.status + " | " + dataApiBaseUrl);
     var configText = rot47(await configResp.text());
     var siteConfig = JSON.parse(configText);
     var webClients = JSON.parse(siteConfig["common:web:client"] || "{}");
@@ -330,6 +337,7 @@
 
     log("fetching geo");
     var geoResp = await apiFetch(dataApiBaseUrl + "/api/user/info", buildHeaders(requestContext));
+    if (!geoResp.ok) throw new Error("Geo HTTP " + geoResp.status + " | " + dataApiBaseUrl);
     var geoBuf = new Uint8Array(await geoResp.arrayBuffer());
     var geo = parseUserGeo(geoBuf);
 
@@ -340,14 +348,15 @@
     query.set("matchId", parsed.matchId);
     for (var ci = 0; ci < SIGNATURE_BOOTSTRAP_CODES.length; ci++) query.append("code", String(SIGNATURE_BOOTSTRAP_CODES[ci]));
     var sigResp = await apiFetch(dataApiBaseUrl + "/api/common/bs?" + query.toString(), buildHeaders(requestContext));
+    if (!sigResp.ok) throw new Error("Signature HTTP " + sigResp.status + " | " + dataApiBaseUrl);
     var sigBuf = new Uint8Array(await sigResp.arrayBuffer());
     var sigEnv = parseApiEnvelope(sigBuf);
-    if (sigEnv.message !== "Success") throw new Error("signature bootstrap failed: " + sigEnv.message);
+    if (sigEnv.message !== "Success") throw new Error("signature bootstrap failed: " + sigEnv.message + " | " + dataApiBaseUrl);
     var signatureKeys = new Map();
     sigEnv.payload.forEach(function(chunk) { parseSignatureEntries(chunk).forEach(function(entry) { signatureKeys.set(entry.code, entry.value); }); });
 
     var suffix = signatureKeys.get(MATCH_DETAIL_SIGNATURE_CODE);
-    if (!suffix) throw new Error("missing body signature");
+    if (!suffix) throw new Error("missing body signature | " + dataApiBaseUrl);
 
     log("fetching match detail");
     var detailQuery = sortRequestParams({ matchId: parsed.matchId, sportType: parsed.sportType, language: 0, stream: true });
@@ -355,10 +364,11 @@
     for (var dk in detailQuery) qs.set(dk, String(detailQuery[dk]));
     var detailUrl = dataApiBaseUrl + "/sfver" + requestHashPrefix({ matchId: parsed.matchId, sportType: parsed.sportType, language: 0, stream: true }) + suffix + "/api/match/detail?" + qs.toString();
     var detailResp = await apiFetch(detailUrl, buildHeaders(requestContext));
+    if (!detailResp.ok) throw new Error("Match detail HTTP " + detailResp.status + " | " + detailUrl.substring(0, 120));
     var detailBuf = new Uint8Array(await detailResp.arrayBuffer());
     var match = parseMatchDetail(detailBuf);
     var liveStreams = match.stream.filter(function(s) { return s.streamId; });
-    if (!liveStreams.length) throw new Error("no stream on match (not live yet?)");
+    if (!liveStreams.length) throw new Error("no stream on match (not live yet?) | matchId=" + parsed.matchId);
 
     if (!requestedStreamId && input.indexOf("?") !== -1) {
       try { requestedStreamId = new URL(input).searchParams.get("streamId"); } catch {}

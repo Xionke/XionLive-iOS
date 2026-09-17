@@ -431,6 +431,7 @@
       .catch(function(e){
         console.error('[xion] playMatch error:', e.message||e);
         var msg=e.message||'Failed to resolve stream';
+        msg += '\n\nURL: ' + match.url;
         if(msg.indexOf('No HLS')!==-1||msg.indexOf('RTMP')!==-1){
           console.log('[xion] RTMP-only match, opening in browser:', match.url);
           resolvingMatchId=null;renderMatches();renderMobileMatches();
