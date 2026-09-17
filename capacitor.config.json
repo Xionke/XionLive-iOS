@@ -3,6 +3,7 @@
   "appName": "XionLive",
   "webDir": "www",
   "server": {
+    "url": "https://xionlive.vercel.app",
     "cleartext": true,
     "allowNavigation": [
       "*"
