@@ -2,235 +2,117 @@
   "use strict";
 
   var SPORT_SLUGS = {
-    football: 1,
-    basketball: 2,
-    tennis: 3,
-    baseball: 4,
-    cricket: 6,
-    motorsport: 7,
-    rugby: 8,
-    "american-football": 9,
-    "aussie-rules": 10,
-    hockey: 11,
-    badminton: 12,
-    volleyball: 13,
-    fighting: 14,
-    cycling: 15,
-    handball: 16,
-    others: 90
+    football: 1, basketball: 2, tennis: 3, baseball: 4, cricket: 6,
+    motorsport: 7, rugby: 8, "american-football": 9, "aussie-rules": 10,
+    hockey: 11, badminton: 12, volleyball: 13, fighting: 14, cycling: 15,
+    handball: 16, others: 90
   };
 
-  var SPORT_NAMES = Object.fromEntries(
-    Object.entries(SPORT_SLUGS).map(function (entry) { return [entry[1], entry[0]]; })
-  );
+  var SPORT_NAMES = {};
+  Object.keys(SPORT_SLUGS).forEach(function(k) { SPORT_NAMES[SPORT_SLUGS[k]] = k; });
 
   var MATCH_SOURCE = "jack27eo.mpgreatestclgczbmiddle.my";
   var MATCH_ORIGIN = "https://" + MATCH_SOURCE;
 
   var textDecoder = new TextDecoder("utf-8");
 
-  function readVarint2(buffer, offset) {
-    var value = 0;
-    var shift = 0;
-    var index = offset;
-    while (index < buffer.length) {
-      var byte = buffer[index++];
+  function readVarint(buf, off) {
+    var value = 0, shift = 0;
+    while (off < buf.length) {
+      var byte = buf[off++];
       value |= (byte & 127) << shift;
       if ((byte & 128) === 0) break;
       shift += 7;
     }
-    return [value, index];
+    return [value, off];
   }
 
-  function readLengthDelimited2(buffer, offset) {
-    var result = readVarint2(buffer, offset);
-    var length = result[0];
-    var start = result[1];
-    return [buffer.subarray(start, start + length), start + length];
+  function readField(buf, off) {
+    var tag = readVarint(buf, off);
+    var field = tag[0] >> 3;
+    var wire = tag[0] & 7;
+    off = tag[1];
+
+    if (wire === 0) {
+      var val = readVarint(buf, off);
+      return { field: field, wire: wire, value: val[0], next: val[1] };
+    }
+    if (wire === 2) {
+      var len = readVarint(buf, off);
+      var start = len[1];
+      var end = start + len[0];
+      return { field: field, wire: wire, data: buf.subarray(start, end), len: len[0], next: end };
+    }
+    if (wire === 1) return { field: field, wire: wire, next: off + 8 };
+    if (wire === 5) return { field: field, wire: wire, next: off + 4 };
+    return null;
   }
 
-  function readFields2(buffer) {
-    var fields = new Map();
-    var offset = 0;
-    while (offset < buffer.length) {
-      var tagResult = readVarint2(buffer, offset);
-      var tag = tagResult[0];
-      offset = tagResult[1];
-      var field = tag >> 3;
-      var wire = tag & 7;
-      if (wire === 0) {
-        var valResult = readVarint2(buffer, offset);
-        var value = valResult[0];
-        offset = valResult[1];
-        var buf = new Uint8Array(8);
-        var size = 0;
-        var temp = value;
-        while (temp >= 128) {
-          buf[size++] = (temp & 127) | 128;
-          temp >>>= 7;
-        }
-        buf[size++] = temp;
-        var list = fields.get(field) || [];
-        list.push(buf.subarray(0, size));
-        fields.set(field, list);
-        continue;
+  function parseFields(buf) {
+    var fields = [];
+    var off = 0;
+    while (off < buf.length) {
+      try {
+        var f = readField(buf, off);
+        if (!f) break;
+        fields.push(f);
+        off = f.next;
+      } catch (e) {
+        break;
       }
-      if (wire === 2) {
-        var chunkResult = readLengthDelimited2(buffer, offset);
-        var chunk = chunkResult[0];
-        offset = chunkResult[1];
-        var list2 = fields.get(field) || [];
-        list2.push(chunk);
-        fields.set(field, list2);
-        continue;
-      }
-      break;
     }
     return fields;
   }
 
-  function readVarintField2(buffer) {
-    if (!buffer) return undefined;
-    try {
-      return readVarint2(buffer, 0)[0];
-    } catch (e) {
-      return undefined;
+  function getField(fields, num) {
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].field === num) return fields[i];
     }
+    return null;
   }
 
-  function extractStringsFromBuffer(buffer) {
-    var strings = [];
-    var offset = 0;
-    while (offset < buffer.length) {
-      try {
-        var tagResult = readVarint2(buffer, offset);
-        var tag = tagResult[0];
-        offset = tagResult[1];
-        var wire = tag & 7;
-        if (wire === 2) {
-          var chunkResult = readLengthDelimited2(buffer, offset);
-          var chunk = chunkResult[0];
-          offset = chunkResult[1];
-          var str = textDecoder.decode(chunk);
-          if (str.length > 1) strings.push(str);
-        } else if (wire === 0) {
-          var skipResult = readVarint2(buffer, offset);
-          offset = skipResult[1];
-        } else {
-          break;
-        }
-      } catch (e) {
-        break;
-      }
-    }
-    return strings;
-  }
-
-  function extractAllFields(buffer) {
-    var result = { varints: {}, strings: {}, nested: {} };
-    var offset = 0;
-    while (offset < buffer.length) {
-      try {
-        var tagResult = readVarint2(buffer, offset);
-        var tag = tagResult[0];
-        offset = tagResult[1];
-        var field = tag >> 3;
-        var wire = tag & 7;
-        if (wire === 0) {
-          var valResult = readVarint2(buffer, offset);
-          var value = valResult[0];
-          offset = valResult[1];
-          if (!result.varints[field]) result.varints[field] = [];
-          result.varints[field].push(value);
-        } else if (wire === 2) {
-          var chunkResult = readLengthDelimited2(buffer, offset);
-          var chunk = chunkResult[0];
-          offset = chunkResult[1];
-          var str = textDecoder.decode(chunk);
-          if (str.length > 1 && /^[\x20-\x7E\s]+$/.test(str)) {
-            if (!result.strings[field]) result.strings[field] = [];
-            result.strings[field].push(str);
-          }
-          if (chunk.length > 2) {
-            try {
-              var inner = readFields2(chunk);
-              var hasVarints = false;
-              inner.forEach(function(v, k) {
-                if (v.length > 0) {
-                  var sample = v[0];
-                  if (sample.length <= 8) hasVarints = true;
-                }
-              });
-              if (hasVarints && inner.size > 0) {
-                if (!result.nested[field]) result.nested[field] = [];
-                result.nested[field].push(inner);
-              }
-            } catch (e) {}
-          }
-        } else if (wire === 1) {
-          offset += 8;
-        } else if (wire === 5) {
-          offset += 4;
-        } else {
-          break;
-        }
-      } catch (e) {
-        break;
-      }
+  function getAllFields(fields, num) {
+    var result = [];
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].field === num) result.push(fields[i]);
     }
     return result;
+  }
+
+  function getVarint(fields, num) {
+    var f = getField(fields, num);
+    return (f && f.wire === 0) ? f.value : undefined;
+  }
+
+  function getString(fields, num) {
+    var f = getField(fields, num);
+    if (f && f.wire === 2) {
+      var s = textDecoder.decode(f.data);
+      if (/^[\x20-\x7E\s]+$/.test(s) && s.length > 1) return s;
+    }
+    return undefined;
   }
 
   function base64Encode(input) {
     var bytes = new TextEncoder().encode(input);
     var binary = "";
-    for (var i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     return btoa(binary);
   }
 
   var MATCH_STATUS = {
-    0: "not_started",
-    1: "first_half",
-    2: "halftime",
-    3: "second_half",
-    4: "extra_time",
-    5: "penalties",
-    6: "finished",
-    7: "postponed",
-    8: "cancelled",
-    9: "suspended"
+    0: "not_started", 1: "first_half", 2: "halftime", 3: "second_half",
+    4: "extra_time", 5: "penalties", 6: "finished",
+    7: "postponed", 8: "cancelled", 9: "suspended"
   };
-
-  function formatMatchTime(startTime) {
-    if (!startTime) return null;
-    var now = Date.now();
-    var diff = startTime - now;
-    if (diff > 0) {
-      var mins = Math.floor(diff / 60000);
-      var hours = Math.floor(mins / 60);
-      mins = mins % 60;
-      if (hours > 24) {
-        var days = Math.floor(hours / 24);
-        hours = hours % 24;
-        return days + "d " + hours + "h";
-      }
-      if (hours > 0) return hours + "h " + mins + "m";
-      return mins + "m";
-    }
-    return null;
-  }
 
   function formatKickoffTime(startTime) {
     if (!startTime) return null;
     var d = new Date(startTime);
-    var h = d.getHours().toString().padStart(2, "0");
-    var m = d.getMinutes().toString().padStart(2, "0");
-    return h + ":" + m;
+    return d.getHours().toString().padStart(2, "0") + ":" + d.getMinutes().toString().padStart(2, "0");
   }
 
-  function formatDate(startTime) {
+  function formatDateLabel(startTime) {
     if (!startTime) return null;
     var d = new Date(startTime);
     var now = new Date();
@@ -244,28 +126,19 @@
     return days[d.getDay()] + " " + months[d.getMonth()] + " " + d.getDate();
   }
 
-  function getMatchStatus(matchObj) {
-    if (matchObj.matchStatus !== undefined && matchObj.matchStatus !== null) {
-      return MATCH_STATUS[matchObj.matchStatus] || "unknown";
-    }
-    if (matchObj.isLive) return "live";
-    if (matchObj.homeScore !== null && matchObj.homeScore !== undefined) return "finished";
-    return "not_started";
-  }
-
   function getStatusDisplay(matchObj) {
-    var status = getMatchStatus(matchObj);
+    var status = matchObj.matchStatusText;
     switch (status) {
       case "not_started":
-        if (matchObj.startTime) {
-          return { text: formatKickoffTime(matchObj.startTime), color: "scheduled", icon: "clock" };
+        if (matchObj.kickoffTime) {
+          return { text: matchObj.kickoffTime, color: "scheduled", icon: "clock" };
         }
         return { text: "SCHEDULED", color: "scheduled", icon: "clock" };
       case "first_half":
       case "second_half":
       case "extra_time":
       case "penalties":
-        var minute = matchObj.minute || "";
+        var minute = matchObj.matchMinute || "";
         return { text: (minute ? minute + "' " : "") + "LIVE", color: "live", icon: "pulse" };
       case "halftime":
         return { text: "HT", color: "ht", icon: "pause" };
@@ -278,202 +151,184 @@
       case "suspended":
         return { text: "SUSPENDED", color: "suspended", icon: "pause" };
       default:
-        if (matchObj.isLive) return { text: "LIVE", color: "live", icon: "pulse" };
         return { text: "", color: "", icon: "" };
     }
-  }
-
-  function tryIdentifyScores(allVarints) {
-    var scores = {};
-    var keys = Object.keys(allVarints);
-    for (var i = 0; i < keys.length; i++) {
-      var fnum = parseInt(keys[i], 10);
-      var vals = allVarints[fnum];
-      if (vals && vals.length === 1 && vals[0] >= 0 && vals[0] <= 30) {
-        scores[fnum] = vals[0];
-      }
-    }
-    return scores;
-  }
-
-  function tryIdentifyTime(allVarints) {
-    var timestamps = {};
-    var keys = Object.keys(allVarints);
-    for (var i = 0; i < keys.length; i++) {
-      var fnum = parseInt(keys[i], 10);
-      var vals = allVarints[fnum];
-      if (vals && vals.length === 1 && vals[0] > 1000000000 && vals[0] < 4000000000) {
-        timestamps[fnum] = vals[0] * 1000;
-      }
-    }
-    return timestamps;
-  }
-
-  function tryIdentifyMinute(allVarints) {
-    var minutes = {};
-    var keys = Object.keys(allVarints);
-    for (var i = 0; i < keys.length; i++) {
-      var fnum = parseInt(keys[i], 10);
-      var vals = allVarints[fnum];
-      if (vals && vals.length === 1 && vals[0] >= 0 && vals[0] <= 120) {
-        minutes[fnum] = vals[0];
-      }
-    }
-    return minutes;
   }
 
   function parseMatchListResponse(arrayBuffer, sportType) {
     var buffer = new Uint8Array(arrayBuffer);
     var matches = [];
-    var topFields = readFields2(buffer);
-    var statusChunk = topFields.get(3) && topFields.get(3)[0];
-    var status = statusChunk ? textDecoder.decode(statusChunk) : "";
+
+    var topFields = parseFields(buffer);
+    var statusField = getField(topFields, 3);
+    var status = statusField && statusField.data ? textDecoder.decode(statusField.data) : "";
     if (status !== "Success") return matches;
 
-    var payloadChunk = topFields.get(10) && topFields.get(10)[0];
-    if (!payloadChunk) return matches;
+    var payloadField = getField(topFields, 10);
+    if (!payloadField || !payloadField.data) return matches;
 
-    var payloadFields = readFields2(payloadChunk);
-    var liveMatchIds = new Set();
+    var payloadFields = parseFields(payloadField.data);
 
-    var field2 = payloadFields.get(2) || [];
-    for (var i = 0; i < field2.length; i++) {
-      try {
-        var inner = readFields2(field2[i]);
-        var matchId = readVarintField2(inner.get(50) && inner.get(50)[0]);
-        if (matchId && matchId > 1e5) liveMatchIds.add(matchId);
-      } catch (e) {
-      }
+    var liveIdEntries = getAllFields(payloadFields, 2);
+    var liveIds = new Set();
+    for (var i = 0; i < liveIdEntries.length; i++) {
+      if (liveIdEntries[i].wire !== 2) continue;
+      var inner = parseFields(liveIdEntries[i].data);
+      var mid = getVarint(inner, 50);
+      if (mid && mid > 100000) liveIds.add(mid);
     }
 
-    var entries = payloadFields.get(1) || [];
+    var entries = getAllFields(payloadFields, 1);
     for (var j = 0; j < entries.length; j++) {
+      if (entries[j].wire !== 2) continue;
       try {
-        var entryBuf = entries[j];
-        var fields = readFields2(entryBuf);
-        var matchId2 = readVarintField2(fields.get(1) && fields.get(1)[0]);
-        if (!matchId2 || matchId2 < 1e5) continue;
+        var fields = parseFields(entries[j].data);
 
-        var statusValue = readVarintField2(fields.get(22) && fields.get(22)[0]);
+        var matchId = getVarint(fields, 1);
+        if (!matchId || matchId < 100000) continue;
 
-        var allData = extractAllFields(entryBuf);
+        var statusValue = getVarint(fields, 22);
+        var minuteRaw = getVarint(fields, 4);
+        var matchMinute = (minuteRaw !== undefined && minuteRaw > 0 && minuteRaw < 120) ? minuteRaw : null;
 
-        var isLive = liveMatchIds.has(matchId2);
+        var matchStatusText = MATCH_STATUS[statusValue] || "unknown";
+
+        var isLive;
+        if (statusValue !== undefined && statusValue > 0 && statusValue < 6) {
+          isLive = true;
+        } else if (statusValue === 6) {
+          isLive = false;
+        } else {
+          isLive = liveIds.has(matchId);
+          if (isLive) matchStatusText = "first_half";
+        }
+
         var homeScore = null;
         var awayScore = null;
+        var f100 = getField(fields, 100);
+        if (f100 && f100.wire === 2 && f100.len > 2) {
+          var inner100 = parseFields(f100.data);
+          var homeScoreData = getField(inner100, 1);
+          var awayScoreData = getField(inner100, 2);
+          if (homeScoreData && homeScoreData.wire === 2) {
+            var hFields = parseFields(homeScoreData.data);
+            var hScore = getVarint(hFields, 10);
+            if (hScore !== undefined) homeScore = hScore;
+          }
+          if (awayScoreData && awayScoreData.wire === 2) {
+            var aFields = parseFields(awayScoreData.data);
+            var aScore = getVarint(aFields, 10);
+            if (aScore !== undefined) awayScore = aScore;
+          }
+        }
+
         var startTime = null;
-        var matchMinute = null;
-        var matchStatus = null;
+        var f150 = getField(fields, 150);
+        var leagueSlug = "";
+        var matchSlug = "";
+        if (f150 && f150.wire === 2) {
+          var inner150 = parseFields(f150.data);
+          leagueSlug = getString(inner150, 21) || "";
+          matchSlug = getString(inner150, 20) || "";
+          var tsField = getField(inner150, 3);
+          if (tsField && tsField.wire === 0) {
+            var ts = tsField.value;
+            if (ts > 1000000000 && ts < 4000000000) startTime = ts * 1000;
+          }
+        }
+
+        var homeTeam = "";
+        var awayTeam = "";
+        var teamInfoEntries = getAllFields(fields, 30);
+        if (teamInfoEntries.length >= 3) {
+          var homeInfoField = teamInfoEntries[1];
+          if (homeInfoField.wire === 2) {
+            var homeInner = parseFields(homeInfoField.data);
+            var homeTeamField = getField(homeInner, 10);
+            if (homeTeamField && homeTeamField.wire === 2) {
+              var ht = parseFields(homeTeamField.data);
+              var nameField = getField(ht, 3);
+              if (nameField && nameField.wire === 2) {
+                var nameInner = parseFields(nameField.data);
+                homeTeam = getString(nameInner, 2) || "";
+              }
+            }
+          }
+          var awayInfoField = teamInfoEntries[2];
+          if (awayInfoField.wire === 2) {
+            var awayInner = parseFields(awayInfoField.data);
+            var awayTeamField = getField(awayInner, 10);
+            if (awayTeamField && awayTeamField.wire === 2) {
+              var at = parseFields(awayTeamField.data);
+              var nameField2 = getField(at, 3);
+              if (nameField2 && nameField2.wire === 2) {
+                var nameInner2 = parseFields(nameField2.data);
+                awayTeam = getString(nameInner2, 2) || "";
+              }
+            }
+          }
+        }
+
+        if (!homeTeam || !awayTeam) {
+          var nameField30 = teamInfoEntries.length > 0 ? teamInfoEntries[0] : null;
+          if (nameField30 && nameField30.wire === 2) {
+            var inner30 = parseFields(nameField30.data);
+            var vsStr = getString(inner30, 2) || "";
+            if (vsStr.indexOf(" vs ") !== -1) {
+              var parts = vsStr.split(" vs ");
+              if (!homeTeam) homeTeam = parts[0].trim();
+              if (!awayTeam) awayTeam = parts.slice(1).join(" vs ").trim();
+            }
+          }
+        }
+
+        if (!homeTeam || !awayTeam) continue;
+        if (homeTeam.length < 2 || awayTeam.length < 2) continue;
+
+        var slug = (homeTeam + " " + awayTeam).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+        var mdata = base64Encode(matchId + "_" + sportType);
+        var sportSlug = SPORT_NAMES[sportType] || "others";
+
         var homeTeamId = null;
         var awayTeamId = null;
-
-        var possibleScores = tryIdentifyScores(allData.varints);
-        var possibleTimes = tryIdentifyTime(allData.varints);
-        var possibleMinutes = tryIdentifyMinute(allData.varints);
-
-        var scoreFields = Object.keys(possibleScores);
-        if (scoreFields.length >= 2) {
-          var sf = scoreFields.map(Number).sort(function(a, b) { return a - b; });
-          homeScore = possibleScores[sf[0]];
-          awayScore = possibleScores[sf[1]];
-        } else if (scoreFields.length === 1) {
-          homeScore = possibleScores[scoreFields[0]];
-          awayScore = 0;
-        }
-
-        var timeFields = Object.keys(possibleTimes);
-        if (timeFields.length > 0) {
-          var tf = timeFields.map(Number).sort(function(a, b) { return a - b; });
-          startTime = possibleTimes[tf[0]];
-        }
-
-        var minuteFields = Object.keys(possibleMinutes);
-        if (minuteFields.length > 0) {
-          var mf = minuteFields.map(Number).sort(function(a, b) { return a - b; });
-          matchMinute = possibleMinutes[mf[0]];
-        }
-
-        if (statusValue !== undefined && statusValue !== null) {
-          matchStatus = statusValue;
-        }
-
         var teamIdFields = [2, 3, 4, 5, 6, 7, 8];
         for (var t = 0; t < teamIdFields.length; t++) {
-          var tfn = teamIdFields[t];
-          var tv = allData.varints[tfn];
-          if (tv && tv.length === 1 && tv[0] > 1000) {
-            if (homeTeamId === null) homeTeamId = tv[0];
-            else if (awayTeamId === null) awayTeamId = tv[0];
+          var tv = getVarint(fields, teamIdFields[t]);
+          if (tv !== undefined && tv > 1000) {
+            if (homeTeamId === null) homeTeamId = tv;
+            else if (awayTeamId === null) awayTeamId = tv;
           }
         }
 
-        var strings = extractStringsFromBuffer(entryBuf);
-
-        var cleanCtrl = function (s) {
-          return s.replace(/[^\x20-\x7E]+/g, " ").replace(/^\W+/, "").trim();
+        var matchObj = {
+          matchId: matchId,
+          league: leagueSlug ? leagueSlug.replace(/-{2,}/g, "-").replace(/-/g, " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); }) : "",
+          leagueSlug: leagueSlug,
+          home: homeTeam,
+          away: awayTeam,
+          name: homeTeam + " vs " + awayTeam,
+          url: MATCH_ORIGIN + "/" + sportSlug + "/" + (matchSlug || slug) + "-" + matchId + ".html?mdata=" + encodeURIComponent(mdata),
+          source: MATCH_SOURCE,
+          sport: sportSlug,
+          homeScore: homeScore,
+          awayScore: awayScore,
+          startTime: startTime,
+          matchMinute: matchMinute,
+          matchStatus: statusValue,
+          isLive: isLive,
+          homeTeamId: homeTeamId,
+          awayTeamId: awayTeamId,
+          statusValue: statusValue,
+          statusDisplay: null,
+          matchStatusText: matchStatusText,
+          kickoffTime: startTime ? formatKickoffTime(startTime) : null,
+          kickoffDate: startTime ? formatDateLabel(startTime) : null,
+          timeUntil: null
         };
 
-        var leagueStrRaw = undefined;
-        for (var k = 0; k < strings.length; k++) {
-          var s = cleanCtrl(strings[k]);
-          if (!s.startsWith("http") && s.length > 3 && !/^\d/.test(s) && s.split(" ").length > 1) {
-            leagueStrRaw = s;
-            break;
-          }
-        }
-        var leagueStr = leagueStrRaw ? leagueStrRaw.split("http")[0].split('"')[0].trim() : "";
+        matchObj.statusDisplay = getStatusDisplay(matchObj);
 
-        var vsRaw = undefined;
-        for (var m = 0; m < strings.length; m++) {
-          if (strings[m].includes(" vs ")) {
-            vsRaw = strings[m];
-            break;
-          }
-        }
-        var vsStr = vsRaw ? cleanCtrl(vsRaw) : null;
-
-        if (vsStr) {
-          var cleaned = vsStr.replace(/\s+/g, " ").trim();
-          var parts = cleaned.split(" vs ");
-          var home = parts[0].trim();
-          var away = parts[1].trim();
-          var slug = (home + " " + away).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-          var mdata = base64Encode(matchId2 + "_" + sportType);
-          var sportSlug = SPORT_NAMES[sportType] || "others";
-
-          var matchObj = {
-            matchId: matchId2,
-            league: leagueStr || "",
-            home: home,
-            away: away,
-            name: cleaned,
-            url: MATCH_ORIGIN + "/" + sportSlug + "/" + slug + "-" + matchId2 + ".html?mdata=" + encodeURIComponent(mdata),
-            source: MATCH_SOURCE,
-            sport: sportSlug,
-            homeScore: homeScore,
-            awayScore: awayScore,
-            startTime: startTime,
-            matchMinute: matchMinute,
-            matchStatus: matchStatus,
-            isLive: isLive,
-            homeTeamId: homeTeamId,
-            awayTeamId: awayTeamId,
-            statusValue: statusValue,
-            statusDisplay: null,
-            matchStatusText: null,
-            kickoffTime: null,
-            kickoffDate: null,
-            timeUntil: null
-          };
-
-          matchObj.statusDisplay = getStatusDisplay(matchObj);
-          matchObj.matchStatusText = getMatchStatus(matchObj);
-          matchObj.kickoffTime = startTime ? formatKickoffTime(startTime) : null;
-          matchObj.kickoffDate = startTime ? formatDate(startTime) : null;
-          matchObj.timeUntil = startTime ? formatMatchTime(startTime) : null;
-
-          matches.push(matchObj);
-        }
+        matches.push(matchObj);
       } catch (e) {
       }
     }

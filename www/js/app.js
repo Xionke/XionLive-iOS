@@ -262,16 +262,21 @@
       function lp(l) {
         l = l.toLowerCase();
         if (l.indexOf("jupiler") !== -1 || l.indexOf("belgian pro") !== -1 || l.indexOf("pro league") !== -1) return 1;
-        if (l.indexOf("champion") !== -1 && l.indexOf("league") !== -1) return 2;
-        if (l.indexOf("europa") !== -1 && l.indexOf("league") !== -1) return 3;
-        if (l.indexOf("conference") !== -1 && l.indexOf("league") !== -1) return 4;
-        if (l.indexOf("premier") !== -1) return 5;
-        if (l.indexOf("primera") !== -1 || l.indexOf("la liga") !== -1 || l.indexOf("spain") !== -1) return 6;
-        if (l.indexOf("serie a") !== -1 && l.indexOf("serie c") === -1) return 7;
+        if (l.indexOf("champions") !== -1 || (l.indexOf("champion") !== -1 && l.indexOf("league") !== -1)) return 2;
+        if (l.indexOf("europa league") !== -1 || l.indexOf("europa-league") !== -1) return 3;
+        if (l.indexOf("conference league") !== -1 || l.indexOf("conference-league") !== -1) return 4;
+        if (l.indexOf("premier league") !== -1 || l.indexOf("premier-league") !== -1) return 5;
+        if (l.indexOf("la liga") !== -1 || l.indexOf("la-liga") !== -1 || l.indexOf("primera") !== -1) return 6;
+        if (l.indexOf("serie a") !== -1 || l.indexOf("serie-a") !== -1) return 7;
         if (l.indexOf("bundesliga") !== -1) return 8;
-        if (l.indexOf("ligue 1") !== -1) return 9;
+        if (l.indexOf("ligue 1") !== -1 || l.indexOf("ligue-1") !== -1) return 9;
         if (l.indexOf("eredivisie") !== -1) return 10;
         if (l.indexOf("primeira") !== -1 || l.indexOf("liga portugal") !== -1) return 11;
+        if (l.indexOf("scottish") !== -1) return 12;
+        if (l.indexOf("turkish") !== -1 || l.indexOf("super lig") !== -1) return 13;
+        if (l.indexOf("russian") !== -1) return 14;
+        if (l.indexOf("chinese") !== -1) return 15;
+        if (l.indexOf("japanese") !== -1) return 16;
         return 20;
       }
       var pa = lp(a), pb = lp(b);
@@ -907,10 +912,19 @@
 
   /* === FULLSCREEN === */
   function enterFullscreen() {
+    var el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().catch(function() {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
     if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(function() {});
-    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function() {});
+    video.style.objectFit = "contain";
+    video.style.maxWidth = "100%";
+    video.style.maxHeight = "100%";
   }
-  document.addEventListener("fullscreenchange", function() {});
+  document.addEventListener("fullscreenchange", function() {
+    if (!document.fullscreenElement) {
+      video.style.objectFit = "contain";
+    }
+  });
 
   /* === EVENT HANDLERS === */
   document.getElementById("player-back").onclick = stopPlayback;
@@ -1040,7 +1054,7 @@
       '<div class="modal-body">' +
         '<div class="about-logo"><svg viewBox="0 0 24 24" fill="none" width="48" height="48"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="var(--accent)"/></svg></div>' +
         '<h2 class="about-name">XIONLIVE</h2>' +
-        '<p class="about-version">v2.1.0</p>' +
+        '<p class="about-version">v2.2.0</p>' +
         '<div class="about-features">' +
           '<div class="about-feature">Live scores across 16 sports</div>' +
           '<div class="about-feature">HD streams with Chromecast & AirPlay</div>' +
@@ -1397,16 +1411,27 @@
 
     var body = modal.querySelector(".modal-body");
 
-    var leagueId = null;
     var leagueMap = {
-      "premier league": 2021, "la liga": 2014, "serie a": 2019,
-      "bundesliga": 2002, "ligue 1": 2015, "eredivisie": 2003,
-      "champions league": 2001, "europa league": 2146, "conference league": 2147,
-      "jupiler pro league": 2012, "belgian pro league": 2012, "pro league": 2012
+      "jupiler": 4338, "belgian pro": 4338, "pro league": 4338,
+      "premier league": 4328, "premier-league": 4328,
+      "la liga": 4335, "la-liga": 4335, "primera": 4335,
+      "serie a": 4332, "serie-a": 4332,
+      "bundesliga": 4331,
+      "ligue 1": 4334, "ligue-1": 4334,
+      "eredivisie": 4337,
+      "primeira": 4346, "liga portugal": 4346,
+      "champions": 4480, "champion": 4480,
+      "europa league": 4479, "europa-league": 4479,
+      "conference league": 4481, "conference-league": 4481,
+      "scottish": 4336, "turkish": 4333, "super lig": 4333,
+      "russian": 4460, "chinese": 4365, "japanese": 4362,
+      "brazilian": 4343, "argentine": 4344,
+      "mexican": 4342, "mls": 4341
     };
     var lKey = (league || "").toLowerCase().trim();
+    var leagueId = null;
     for (var k in leagueMap) {
-      if (lKey.indexOf(k) !== -1 || k.indexOf(lKey) !== -1) { leagueId = leagueMap[k]; break; }
+      if (lKey.indexOf(k) !== -1) { leagueId = leagueMap[k]; break; }
     }
 
     if (!leagueId) {
@@ -1414,12 +1439,10 @@
       return;
     }
 
-    fetch("https://api.football-data.org/v4/competitions/" + leagueId + "/standings", {
-      headers: { "X-Auth-Token": "b1675e81be5b4a0d987ed68e7a66e0a2" }
-    })
+    fetch("https://www.thesportsdb.com/api/v1/json/3/lookuptable.php?l=" + leagueId + "&s=2025")
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        var table = d.standings && d.standings[0] && d.standings[0].table;
+        var table = d.table;
         if (!table || !table.length) {
           body.innerHTML = '<div class="standings-loading">No standings data available</div>';
           return;
@@ -1427,7 +1450,8 @@
         var html = '<table class="standings-table"><thead><tr><th class="pos">#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th class="pts">Pts</th></tr></thead><tbody>';
         for (var i = 0; i < Math.min(table.length, 20); i++) {
           var t = table[i];
-          html += '<tr><td class="pos">' + t.position + '</td><td class="team">' + esc(t.team.shortName || t.team.name) + '</td><td>' + t.playedGames + '</td><td>' + t.won + '</td><td>' + t.draw + '</td><td>' + t.lost + '</td><td>' + (t.goalDifference > 0 ? "+" : "") + t.goalDifference + '</td><td class="pts">' + t.points + '</td></tr>';
+          var gd = parseInt(t.intGoalDifference) || 0;
+          html += '<tr><td class="pos">' + t.intRank + '</td><td class="team">' + esc(t.strTeam) + '</td><td>' + t.intPlayed + '</td><td>' + t.intWin + '</td><td>' + t.intDraw + '</td><td>' + t.intLoss + '</td><td>' + (gd > 0 ? "+" : "") + gd + '</td><td class="pts">' + t.intPoints + '</td></tr>';
         }
         html += '</tbody></table>';
         body.innerHTML = html;
