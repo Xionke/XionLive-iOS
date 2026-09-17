@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import WebKit
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
