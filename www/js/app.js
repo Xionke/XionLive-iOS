@@ -17,6 +17,7 @@
   var matchData = [];
   var streamHistory = [];
   var playedIds = [];
+  var favorites = [];
   var currentData = null;
   var hls = null;
   var currentSport = "all";
@@ -24,6 +25,8 @@
   var resolvingMatchId = null;
   var controlsTimer = null;
   var headerTimer = null;
+  var pullRefreshing = false;
+  var lastRefresh = 0;
 
   var video = document.getElementById("video");
   var playerView = document.getElementById("player-view");
@@ -36,6 +39,8 @@
   var searchInput = document.getElementById("search-input");
   var errorToast = document.getElementById("error-toast");
   var toastEl = document.getElementById("toast");
+  var contentEl = document.getElementById("content");
+  var tickerEl = document.getElementById("score-ticker");
 
   try {
     streamHistory = JSON.parse(localStorage.getItem("xion_history") || "[]");
@@ -43,6 +48,9 @@
   try {
     playedIds = JSON.parse(localStorage.getItem("xion_played") || "[]");
   } catch(e) { playedIds = []; }
+  try {
+    favorites = JSON.parse(localStorage.getItem("xion_favorites") || "[]");
+  } catch(e) { favorites = []; }
 
   function log() { var a = ["[xion-app]"]; for (var i = 0; i < arguments.length; i++) a.push(arguments[i]); console.log.apply(console, a); }
   function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
@@ -55,6 +63,23 @@
     toastEl.textContent = msg;
     toastEl.classList.add("show");
     setTimeout(function() { toastEl.classList.remove("show"); }, 1500);
+  }
+
+  function isFavorite(match) {
+    return favorites.indexOf(match.home) !== -1 || favorites.indexOf(match.away) !== -1;
+  }
+
+  function toggleFavorite(teamName) {
+    var idx = favorites.indexOf(teamName);
+    if (idx === -1) {
+      favorites.push(teamName);
+      showToast("Added " + teamName + " to favorites");
+    } else {
+      favorites.splice(idx, 1);
+      showToast("Removed " + teamName + " from favorites");
+    }
+    localStorage.setItem("xion_favorites", JSON.stringify(favorites));
+    renderContent();
   }
 
   function addToHistory(name, inputUrl, playableUrl) {
@@ -70,6 +95,42 @@
       playedIds.push(mid);
       try { localStorage.setItem("xion_played", JSON.stringify(playedIds)); } catch(e) {}
     }
+  }
+
+  function getLiveMatches() {
+    return matchData.filter(function(m) { return m.isLive; });
+  }
+
+  function getScheduledMatches() {
+    return matchData.filter(function(m) { return !m.isLive && m.matchStatusText !== "finished"; });
+  }
+
+  function getFinishedMatches() {
+    return matchData.filter(function(m) { return m.matchStatusText === "finished"; });
+  }
+
+  function updateTicker() {
+    if (!tickerEl) return;
+    var live = getLiveMatches();
+    if (live.length === 0) {
+      tickerEl.classList.remove("visible");
+      return;
+    }
+    tickerEl.classList.add("visible");
+    var html = "";
+    for (var i = 0; i < live.length; i++) {
+      var m = live[i];
+      var scoreText = (m.homeScore !== null ? m.homeScore : "-") + " - " + (m.awayScore !== null ? m.awayScore : "-");
+      var minuteText = m.matchMinute ? m.matchMinute + "'" : "";
+      html += '<div class="ticker-item" data-idx="' + matchData.indexOf(m) + '">' +
+        '<span class="ticker-league">' + esc((m.league || "").substring(0, 20)) + '</span>' +
+        '<span class="ticker-teams">' + esc(m.home.substring(0, 12)) + '</span>' +
+        '<span class="ticker-score">' + scoreText + '</span>' +
+        '<span class="ticker-teams">' + esc(m.away.substring(0, 12)) + '</span>' +
+        (minuteText ? '<span class="ticker-minute">' + minuteText + '</span>' : '') +
+      '</div>';
+    }
+    tickerEl.innerHTML = html;
   }
 
   /* === MATCH LOADING === */
@@ -125,12 +186,21 @@
         if (!ex) merged.push(allMatches[i]);
       }
       matchData = merged;
+      lastRefresh = Date.now();
       renderContent();
+      updateTicker();
       XionLogos.fetchAllTeamLogos(matchData);
       setTimeout(function() { renderContent(); }, 2000);
+      hidePullRefresh();
     }
 
     tryHost(0, 0);
+  }
+
+  function hidePullRefresh() {
+    pullRefreshing = false;
+    var indicator = document.getElementById("pull-indicator");
+    if (indicator) indicator.classList.remove("visible");
   }
 
   /* === RENDERING === */
@@ -193,34 +263,73 @@
     return '<div class="card-team-logo"><div class="initials" style="background:' + color + ';width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:0.55rem">' + esc(initials) + '</div></div>';
   }
 
+  function scoreHtml(match) {
+    if (match.homeScore === null && match.awayScore === null) return "";
+    var home = match.homeScore !== null ? match.homeScore : "-";
+    var away = match.awayScore !== null ? match.awayScore : "-";
+    return '<div class="card-score"><span class="score-home">' + home + '</span><span class="score-sep">-</span><span class="score-away">' + away + '</span></div>';
+  }
+
+  function statusBadgeHtml(match) {
+    var sd = match.statusDisplay;
+    if (!sd || !sd.text) return "";
+    var cls = "status-badge status-" + sd.color;
+    if (sd.color === "live") cls += " status-pulse";
+    return '<span class="' + cls + '">' + esc(sd.text) + '</span>';
+  }
+
   function renderMatchCard(match) {
     var idx = matchData.indexOf(match);
     var ir = resolvingMatchId === match.matchId;
     var leagueLogo = XionLogos.getLeagueLogo(match.league);
     var sportClass = (match.sport || "others").toLowerCase().replace(/[^a-z]/g, "");
+    var isFav = isFavorite(match);
+    var isPlayed = playedIds.indexOf(match.matchId) !== -1;
+    var teamBg = XionLogos.getTeamGradient(match.home, match.away);
 
     var leagueLogoHtml = leagueLogo
       ? '<div class="card-league-logo"><img src="' + esc(leagueLogo) + '" alt="" onerror="this.style.display=\'none\'"></div>'
       : '<div class="card-league-logo"><span class="logo-fallback">' + esc((match.league || "?").substring(0, 2).toUpperCase()) + '</span></div>';
 
-    return '<div class="match-card' + (ir ? " resolving" : "") + '" data-idx="' + idx + '">' +
+    var favHtml = '<button class="card-fav-btn' + (isFav ? " active" : "") + '" data-fav="' + esc(match.home) + '" onclick="event.stopPropagation()">' +
+      '<svg viewBox="0 0 24 24" fill="' + (isFav ? "currentColor" : "none") + '" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>' +
+    '</button>';
+
+    var playedHtml = isPlayed ? '<span class="card-played-badge">&#10003;</span>' : '';
+
+    var timeHtml = "";
+    if (!match.isLive && match.matchStatusText !== "finished") {
+      if (match.kickoffTime) {
+        timeHtml = '<span class="card-kickoff">' + esc(match.kickoffTime) + '</span>';
+      } else if (match.timeUntil) {
+        timeHtml = '<span class="card-kickoff">In ' + esc(match.timeUntil) + '</span>';
+      }
+    }
+
+    return '<div class="match-card' + (ir ? " resolving" : "") + (isFav ? " favorited" : "") + '" data-idx="' + idx + '" style="background:' + teamBg + '">' +
       '<div class="card-league-row">' +
         leagueLogoHtml +
         '<span class="card-league-name">' + esc(match.league || match.sport || "Live") + '</span>' +
-        '<span class="card-live-badge"><span class="live-dot"></span>LIVE</span>' +
+        statusBadgeHtml(match) +
+        timeHtml +
+        playedHtml +
+        favHtml +
       '</div>' +
       '<div class="card-teams">' +
         '<div class="card-team-row">' +
           teamLogoHtml(match.home) +
           '<span class="card-team-name">' + esc(match.home || "?") + '</span>' +
+          (match.homeScore !== null ? '<span class="card-team-score">' + match.homeScore + '</span>' : '') +
         '</div>' +
         '<div class="card-team-row">' +
           teamLogoHtml(match.away) +
           '<span class="card-team-name">' + esc(match.away || "?") + '</span>' +
+          (match.awayScore !== null ? '<span class="card-team-score">' + match.awayScore + '</span>' : '') +
         '</div>' +
       '</div>' +
       '<div class="card-footer">' +
         '<span class="sport-badge ' + sportClass + '">' + esc(match.sport || "live") + '</span>' +
+        (match.isLive ? '<span class="card-live-dot"></span>' : '') +
       '</div>' +
     '</div>';
   }
@@ -233,6 +342,13 @@
       ? '<img src="' + esc(leagueLogo) + '" alt="" style="width:18px;height:18px;border-radius:3px">'
       : '';
 
+    var scoreHtml2 = "";
+    if (featured.homeScore !== null) {
+      scoreHtml2 = '<div class="hero-score">' + featured.homeScore + ' - ' + featured.awayScore + '</div>';
+    }
+
+    var statusHtml = statusBadgeHtml(featured);
+
     return '<div class="hero-banner">' +
       '<div class="hero-glow"></div>' +
       '<div class="hero-inner">' +
@@ -240,10 +356,11 @@
         '<div class="hero-headline">' +
           esc(featured.home || "Featured") + ' <span>vs</span> ' + esc(featured.away || "Match") +
         '</div>' +
-        '<div class="hero-desc">Follow it all live on XionLive.</div>' +
+        scoreHtml2 +
+        statusHtml +
         '<button class="hero-cta" data-idx="' + matchData.indexOf(featured) + '">' +
           '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M8 5v14l11-7z"/></svg>' +
-          'Watch Live' +
+          (featured.isLive ? 'Watch Live' : 'Watch Match') +
         '</button>' +
       '</div>' +
     '</div>';
@@ -251,31 +368,111 @@
 
   function renderContent() {
     var matches = getFilteredMatches();
-    if (!matches.length) {
-      matchContent.innerHTML = '<div class="empty-state"><p>' +
-        (searchInput.value ? "No matches found" : "No live matches") + '</p></div>';
-      return;
-    }
 
     if (currentView === "home") {
-      var html = renderHero(matches);
-      var remaining = matches.slice(1);
-      if (remaining.length) {
-        html += '<div class="section-header"><div class="section-title"><span class="live-indicator"></span>LIVE NOW</div></div>';
+      var liveMatches = matches.filter(function(m) { return m.isLive; });
+      var scheduledMatches = matches.filter(function(m) { return !m.isLive && m.matchStatusText !== "finished"; });
+      var favMatches = liveMatches.filter(isFavorite);
+
+      if (!matches.length) {
+        matchContent.innerHTML = '<div class="empty-state"><p>' +
+          (searchInput.value ? "No matches found" : "No matches available") + '</p></div>';
+        return;
+      }
+
+      var html = "";
+
+      if (favMatches.length > 0) {
+        html += '<div class="section-header"><div class="section-title"><span class="star-indicator">&#9733;</span>YOUR TEAMS</div></div>';
         html += '<div class="match-grid">';
-        for (var i = 0; i < remaining.length; i++) html += renderMatchCard(remaining[i]);
+        for (var i = 0; i < favMatches.length; i++) html += renderMatchCard(favMatches[i]);
         html += '</div>';
       }
+
+      if (liveMatches.length > 0) {
+        var nonFavLive = liveMatches.filter(function(m) { return !isFavorite(m); });
+        if (nonFavLive.length > 0 || favMatches.length === 0) {
+          html += renderHero(liveMatches);
+          html += '<div class="section-header"><div class="section-title"><span class="live-indicator"></span>LIVE NOW</div></div>';
+          html += '<div class="match-grid">';
+          var shown = favMatches.length > 0 ? nonFavLive : liveMatches;
+          for (var i = 0; i < shown.length; i++) html += renderMatchCard(shown[i]);
+          html += '</div>';
+        }
+      }
+
+      if (scheduledMatches.length > 0) {
+        html += '<div class="section-header"><div class="section-title">UPCOMING</div></div>';
+        html += '<div class="match-grid">';
+        for (var i = 0; i < Math.min(scheduledMatches.length, 20); i++) html += renderMatchCard(scheduledMatches[i]);
+        html += '</div>';
+      }
+
       matchContent.innerHTML = html;
+
     } else if (currentView === "live") {
-      var html = '<div class="section-header"><div class="section-title"><span class="live-indicator"></span>ALL LIVE</div></div>';
+      var liveOnly = matches.filter(function(m) { return m.isLive; });
+      if (!liveOnly.length) {
+        matchContent.innerHTML = '<div class="empty-state"><p>No live matches right now</p></div>';
+        return;
+      }
+      var html = '<div class="section-header"><div class="section-title"><span class="live-indicator"></span>ALL LIVE (' + liveOnly.length + ')</div></div>';
       html += '<div class="match-grid">';
-      for (var i = 0; i < matches.length; i++) html += renderMatchCard(matches[i]);
+      for (var i = 0; i < liveOnly.length; i++) html += renderMatchCard(liveOnly[i]);
       html += '</div>';
       matchContent.innerHTML = html;
+
+    } else if (currentView === "scheduled") {
+      var scheduledOnly = matches.filter(function(m) { return !m.isLive && m.matchStatusText !== "finished"; });
+      if (!scheduledOnly.length) {
+        matchContent.innerHTML = '<div class="empty-state"><p>No upcoming matches</p></div>';
+        return;
+      }
+      var html = '<div class="section-header"><div class="section-title">UPCOMING MATCHES</div></div>';
+      html += '<div class="match-grid">';
+      for (var i = 0; i < scheduledOnly.length; i++) html += renderMatchCard(scheduledOnly[i]);
+      html += '</div>';
+      matchContent.innerHTML = html;
+
+    } else if (currentView === "more") {
+      renderMoreView();
+
     } else if (currentView === "history") {
       renderHistoryView();
     }
+  }
+
+  function renderMoreView() {
+    var html = '<div class="more-view">';
+    html += '<div class="more-section">';
+    html += '<div class="more-item" data-action="favorites"><span class="more-icon">&#9733;</span><span>My Favorites</span><span class="more-badge">' + favorites.length + '</span><span class="more-arrow">&#8250;</span></div>';
+    html += '<div class="more-item" data-action="history"><span class="more-icon">&#128337;</span><span>Watch History</span><span class="more-badge">' + streamHistory.length + '</span><span class="more-arrow">&#8250;</span></div>';
+    html += '</div>';
+    html += '<div class="more-section">';
+    html += '<div class="more-item" data-action="about"><span class="more-icon">&#9432;</span><span>About XionLive</span><span class="more-arrow">&#8250;</span></div>';
+    html += '</div>';
+    html += '<div class="more-section">';
+    html += '<div class="more-stats">';
+    html += '<div class="stat-item"><div class="stat-value">' + matchData.length + '</div><div class="stat-label">Total Matches</div></div>';
+    html += '<div class="stat-item"><div class="stat-value">' + getLiveMatches().length + '</div><div class="stat-label">Live Now</div></div>';
+    html += '<div class="stat-item"><div class="stat-value">' + favorites.length + '</div><div class="stat-label">Favorites</div></div>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+    matchContent.innerHTML = html;
+  }
+
+  function renderFavoritesView() {
+    var favMatches = matchData.filter(isFavorite);
+    if (!favMatches.length) {
+      matchContent.innerHTML = '<div class="empty-state"><p>No favorites yet. Tap the heart on any match card to add a team.</p></div>';
+      return;
+    }
+    var html = '<div class="section-header"><div class="section-title">&#9733; MY FAVORITES</div></div>';
+    html += '<div class="match-grid">';
+    for (var i = 0; i < favMatches.length; i++) html += renderMatchCard(favMatches[i]);
+    html += '</div>';
+    matchContent.innerHTML = html;
   }
 
   function renderHistoryView() {
@@ -557,6 +754,37 @@
     }
   })();
 
+  /* === PULL TO REFRESH === */
+  (function() {
+    var startY = 0;
+    var pulling = false;
+    var indicator = document.getElementById("pull-indicator");
+
+    contentEl.addEventListener("touchstart", function(e) {
+      if (contentEl.scrollTop <= 0 && e.touches.length === 1) {
+        startY = e.touches[0].clientY;
+        pulling = true;
+      }
+    }, { passive: true });
+
+    contentEl.addEventListener("touchmove", function(e) {
+      if (!pulling) return;
+      var dy = e.touches[0].clientY - startY;
+      if (dy > 10 && contentEl.scrollTop <= 0) {
+        if (indicator) indicator.classList.add("visible");
+      }
+    }, { passive: true });
+
+    contentEl.addEventListener("touchend", function() {
+      if (!pulling) return;
+      pulling = false;
+      var indicator = document.getElementById("pull-indicator");
+      if (indicator && indicator.classList.contains("visible")) {
+        loadMatches();
+      }
+    });
+  })();
+
   /* === CHROMECAST === */
   var castSession = null;
   var castMedia = null;
@@ -651,6 +879,8 @@
   document.getElementById("player-back").onclick = stopPlayback;
   document.getElementById("airplay-btn").onclick = startAirPlay;
   document.getElementById("fullscreen-btn").onclick = enterFullscreen;
+  document.getElementById("sleep-btn").onclick = showSleepTimer;
+  document.getElementById("audio-btn").onclick = toggleAudioOnly;
 
   video.addEventListener("click", function() { showControls(); });
 
@@ -672,6 +902,7 @@
     btn.classList.add("active");
     currentView = btn.getAttribute("data-view");
     renderContent();
+    contentEl.scrollTop = 0;
   });
 
   matchContent.addEventListener("click", function(e) {
@@ -681,10 +912,41 @@
       if (idx !== null) playMatch(parseInt(idx, 10));
       return;
     }
+
+    var favBtn = e.target.closest(".card-fav-btn");
+    if (favBtn) {
+      e.stopPropagation();
+      var teamName = favBtn.getAttribute("data-fav");
+      if (teamName) toggleFavorite(teamName);
+      return;
+    }
+
+    var moreItem = e.target.closest(".more-item");
+    if (moreItem) {
+      var action = moreItem.getAttribute("data-action");
+      if (action === "favorites") {
+        currentView = "favorites";
+        renderContent();
+      } else if (action === "history") {
+        currentView = "history";
+        renderContent();
+      } else if (action === "about") {
+        showAboutModal();
+      }
+      return;
+    }
+
     var card = e.target.closest(".match-card");
     if (!card) return;
     var idx = card.getAttribute("data-idx");
-    if (idx !== null) playMatch(parseInt(idx, 10));
+    if (idx !== null) {
+      var match = matchData[parseInt(idx, 10)];
+      if (match && match.isLive) {
+        showMatchDetail(parseInt(idx, 10));
+      } else {
+        playMatch(parseInt(idx, 10));
+      }
+    }
     var histIdx = card.getAttribute("data-hist-idx");
     if (histIdx !== null) {
       var h = streamHistory[parseInt(histIdx, 10)];
@@ -694,7 +956,229 @@
         startPlayback(h.playableUrl, h.name);
       }
     }
+
+    var tickerItem = e.target.closest(".ticker-item");
+    if (tickerItem) {
+      var tidx = tickerItem.getAttribute("data-idx");
+      if (tidx !== null) playMatch(parseInt(tidx, 10));
+    }
   });
+
+  function showAboutModal() {
+    var modal = document.createElement("div");
+    modal.className = "modal-overlay";
+    modal.innerHTML = '<div class="modal-sheet">' +
+      '<div class="modal-handle"></div>' +
+      '<div class="modal-header"><span class="modal-title">About XionLive</span><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">&times;</button></div>' +
+      '<div class="modal-body">' +
+        '<div class="about-logo"><svg viewBox="0 0 24 24" fill="none" width="48" height="48"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="var(--accent)"/></svg></div>' +
+        '<h2 class="about-name">XIONLIVE</h2>' +
+        '<p class="about-version">v2.0.0</p>' +
+        '<div class="about-features">' +
+          '<div class="about-feature">Live scores across 16 sports</div>' +
+          '<div class="about-feature">HD streams with Chromecast & AirPlay</div>' +
+          '<div class="about-feature">Favorite teams & leagues</div>' +
+          '<div class="about-feature">Pull to refresh</div>' +
+          '<div class="about-feature">Match detail view</div>' +
+        '</div>' +
+        '<div class="about-credits">' +
+          '<p>Powered by HLS.js, TheSportsDB, Capacitor</p>' +
+        '</div>' +
+        '<div class="about-api-status" id="api-status">Checking API status...</div>' +
+      '</div>' +
+    '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener("click", function(e) { if (e.target === modal) modal.remove(); });
+
+    var statusEl = document.getElementById("api-status");
+    var checked = 0;
+    var online = 0;
+    API_HOSTS.forEach(function(host) {
+      var c = new AbortController();
+      var t = setTimeout(function() { c.abort(); }, 3000);
+      fetch(host, { method: "HEAD", signal: c.signal })
+        .then(function(r) { clearTimeout(t); checked++; if (r.ok) online++; updateStatus(); })
+        .catch(function() { clearTimeout(t); checked++; updateStatus(); });
+    });
+    function updateStatus() {
+      if (statusEl) statusEl.textContent = "API Status: " + online + "/" + API_HOSTS.length + " hosts online";
+    }
+  }
+
+  /* === MATCH DETAIL MODAL === */
+  function showMatchDetail(idx) {
+    var match = matchData[idx];
+    if (!match) return;
+    var leagueLogo = XionLogos.getLeagueLogo(match.league);
+    var homeLogo = XionLogos.getTeamLogo(match.home);
+    var awayLogo = XionLogos.getTeamLogo(match.away);
+    var homeColor = XionLogos.getTeamColor(match.home) || XionLogos.getColorForName(match.home);
+    var awayColor = XionLogos.getTeamColor(match.away) || XionLogos.getColorForName(match.away);
+    var isFav = isFavorite(match);
+    var isPlayed = playedIds.indexOf(match.matchId) !== -1;
+
+    var leagueLogoHtml = leagueLogo
+      ? '<img src="' + esc(leagueLogo) + '" alt="" style="width:24px;height:24px;border-radius:4px">'
+      : '<span style="display:inline-flex;width:24px;height:24px;border-radius:4px;background:var(--surface3);align-items:center;justify-content:center;font-size:0.6rem;font-weight:700;color:var(--muted)">' + esc((match.league || "?").substring(0, 2).toUpperCase()) + '</span>';
+
+    var homeLogoHtml = homeLogo
+      ? '<img src="' + esc(homeLogo) + '" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:contain;background:var(--surface3)">'
+      : '<div style="width:64px;height:64px;border-radius:50%;background:' + homeColor + ';display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:700;color:#fff">' + esc(XionLogos.getInitials(match.home)) + '</div>';
+
+    var awayLogoHtml = awayLogo
+      ? '<img src="' + esc(awayLogo) + '" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:contain;background:var(--surface3)">'
+      : '<div style="width:64px;height:64px;border-radius:50%;background:' + awayColor + ';display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:700;color:#fff">' + esc(XionLogos.getInitials(match.away)) + '</div>';
+
+    var scoreHtml = "";
+    if (match.homeScore !== null && match.awayScore !== null) {
+      scoreHtml = '<div class="detail-score"><span class="detail-score-num">' + match.homeScore + '</span><span class="detail-score-sep">-</span><span class="detail-score-num">' + match.awayScore + '</span></div>';
+    } else if (match.kickoffTime) {
+      scoreHtml = '<div class="detail-kickoff">' + esc(match.kickoffDate || "") + ' ' + esc(match.kickoffTime || "") + '</div>';
+    }
+
+    var statusHtml = statusBadgeHtml(match);
+
+    var minuteHtml = "";
+    if (match.isLive && match.matchMinute) {
+      minuteHtml = '<div class="detail-minute">' + match.matchMinute + "'</div>";
+    }
+
+    var gradient = "linear-gradient(135deg, " + hexToRgbaLocal(homeColor, 0.2) + " 0%, " + hexToRgbaLocal(awayColor, 0.2) + " 100%)";
+
+    var modal = document.createElement("div");
+    modal.className = "modal-overlay";
+    modal.innerHTML = '<div class="modal-sheet detail-modal" style="background:' + gradient + ', var(--surface)">' +
+      '<div class="modal-handle"></div>' +
+      '<div class="modal-header"><span class="modal-title">Match Details</span><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">&times;</button></div>' +
+      '<div class="modal-body">' +
+        '<div class="detail-league">' + leagueLogoHtml + ' ' + esc(match.league || match.sport || "Live") + '</div>' +
+        '<div class="detail-status-row">' + statusHtml + minuteHtml + '</div>' +
+        '<div class="detail-teams">' +
+          '<div class="detail-team">' +
+            homeLogoHtml +
+            '<div class="detail-team-name">' + esc(match.home || "?") + '</div>' +
+          '</div>' +
+          '<div class="detail-center">' + scoreHtml + '</div>' +
+          '<div class="detail-team">' +
+            awayLogoHtml +
+            '<div class="detail-team-name">' + esc(match.away || "?") + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="detail-actions">' +
+          '<button class="detail-action-btn' + (isFav ? " active" : "") + '" data-detail-fav="' + esc(match.home) + '">' +
+            '<svg viewBox="0 0 24 24" fill="' + (isFav ? "currentColor" : "none") + '" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>' +
+            '<span>' + (isFav ? "Favorited" : "Favorite") + '</span>' +
+          '</button>' +
+          (match.isLive ? '<button class="detail-action-btn detail-watch-btn" data-detail-watch="' + idx + '">' +
+            '<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z"/></svg>' +
+            '<span>Watch Live</span>' +
+          '</button>' : '') +
+          (isPlayed ? '<div class="detail-played-label">&#10003; Watched</div>' : '') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener("click", function(e) { if (e.target === modal) modal.remove(); });
+
+    modal.querySelector("[data-detail-fav]").addEventListener("click", function() {
+      toggleFavorite(match.home);
+      modal.remove();
+    });
+
+    var watchBtn = modal.querySelector("[data-detail-watch]");
+    if (watchBtn) {
+      watchBtn.addEventListener("click", function() {
+        modal.remove();
+        playMatch(idx);
+      });
+    }
+  }
+
+  function hexToRgbaLocal(hex, alpha) {
+    if (!hex) return "rgba(20,20,24," + alpha + ")";
+    hex = hex.replace("#", "");
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    var r = parseInt(hex.substring(0, 2), 16);
+    var g = parseInt(hex.substring(2, 4), 16);
+    var b = parseInt(hex.substring(4, 6), 16);
+    return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+  }
+
+  /* === SLEEP TIMER === */
+  var sleepTimerId = null;
+  var sleepTimerEnd = 0;
+
+  function showSleepTimer() {
+    var modal = document.createElement("div");
+    modal.className = "modal-overlay";
+    var remainText = "";
+    if (sleepTimerId) {
+      var rem = Math.max(0, Math.floor((sleepTimerEnd - Date.now()) / 60000));
+      remainText = '<div class="sleep-remaining">Active: ' + rem + ' min remaining</div>';
+    }
+    modal.innerHTML = '<div class="modal-sheet">' +
+      '<div class="modal-handle"></div>' +
+      '<div class="modal-header"><span class="modal-title">Sleep Timer</span><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">&times;</button></div>' +
+      '<div class="modal-body">' +
+        remainText +
+        '<div class="sleep-options">' +
+          '<button class="sleep-opt" data-mins="15">15 min</button>' +
+          '<button class="sleep-opt" data-mins="30">30 min</button>' +
+          '<button class="sleep-opt" data-mins="45">45 min</button>' +
+          '<button class="sleep-opt" data-mins="60">1 hour</button>' +
+          '<button class="sleep-opt" data-mins="120">2 hours</button>' +
+          (sleepTimerId ? '<button class="sleep-opt sleep-cancel" data-mins="0">Cancel Timer</button>' : '') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener("click", function(e) { if (e.target === modal) modal.remove(); });
+
+    modal.querySelectorAll(".sleep-opt").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var mins = parseInt(btn.getAttribute("data-mins"), 10);
+        if (sleepTimerId) { clearTimeout(sleepTimerId); sleepTimerId = null; }
+        if (mins > 0) {
+          sleepTimerEnd = Date.now() + mins * 60000;
+          sleepTimerId = setTimeout(function() {
+            stopPlayback();
+            showToast("Sleep timer: stopped playback");
+            sleepTimerId = null;
+          }, mins * 60000);
+          showToast("Sleep timer set: " + mins + " min");
+        } else {
+          showToast("Sleep timer cancelled");
+        }
+        modal.remove();
+      });
+    });
+  }
+
+  /* === AUDIO ONLY MODE === */
+  var audioOnlyMode = false;
+
+  function toggleAudioOnly() {
+    audioOnlyMode = !audioOnlyMode;
+    if (audioOnlyMode) {
+      video.style.opacity = "0";
+      video.style.position = "absolute";
+      var overlay = document.createElement("div");
+      overlay.id = "audio-only-overlay";
+      overlay.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#000;z-index:1;color:#fff;text-align:center;padding:20px";
+      overlay.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="64" height="64" style="color:var(--accent);margin-bottom:16px"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>' +
+        '<div style="font-size:1.1rem;font-weight:700;margin-bottom:4px">Audio Only</div>' +
+        '<div style="font-size:0.8rem;color:var(--muted)">Lower battery usage</div>';
+      var playerVideo = document.querySelector(".player-video");
+      if (playerVideo) playerVideo.appendChild(overlay);
+      showToast("Audio-only mode ON");
+    } else {
+      video.style.opacity = "1";
+      video.style.position = "";
+      var overlay = document.getElementById("audio-only-overlay");
+      if (overlay) overlay.remove();
+      showToast("Audio-only mode OFF");
+    }
+  }
 
   /* === INIT === */
   loadMatches();

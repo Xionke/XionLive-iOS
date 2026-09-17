@@ -27,14 +27,21 @@
   };
 
   var LOGOS_CACHE_KEY = "xion_team_logos";
+  var COLORS_CACHE_KEY = "xion_team_colors";
   var logoCache = {};
+  var colorCache = {};
   try { logoCache = JSON.parse(localStorage.getItem(LOGOS_CACHE_KEY) || "{}"); } catch(e) {}
+  try { colorCache = JSON.parse(localStorage.getItem(COLORS_CACHE_KEY) || "{}"); } catch(e) {}
 
   function saveCache() {
     try { localStorage.setItem(LOGOS_CACHE_KEY, JSON.stringify(logoCache)); } catch(e) {}
   }
 
-  var COLORS = [
+  function saveColorCache() {
+    try { localStorage.setItem(COLORS_CACHE_KEY, JSON.stringify(colorCache)); } catch(e) {}
+  }
+
+  var FALLBACK_COLORS = [
     "#1e90ff", "#e74c3c", "#2ecc71", "#f39c12", "#9b59b6",
     "#1abc9c", "#e67e22", "#3498db", "#e91e63", "#00bcd4"
   ];
@@ -42,7 +49,14 @@
   function getColorForName(name) {
     var hash = 0;
     for (var i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i);
-    return COLORS[Math.abs(hash) % COLORS.length];
+    return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length];
+  }
+
+  function getTeamColor(teamName) {
+    if (!teamName) return null;
+    var key = teamName.toLowerCase().trim();
+    if (colorCache[key]) return colorCache[key];
+    return null;
   }
 
   function getInitials(name) {
@@ -81,13 +95,19 @@
       .then(function(d) {
         var teams = d && d.teams;
         if (teams && teams.length) {
-          var badge = teams[0].strBadge || teams[0].strLogo;
+          var team = teams[0];
+          var badge = team.strBadge || team.strLogo;
           if (badge) {
             logoCache[key] = badge;
             saveCache();
-            delete pendingFetches[key];
-            return badge;
           }
+          var colour = team.strColour1;
+          if (colour && !colorCache[key]) {
+            colorCache[key] = colour.startsWith("#") ? colour : "#" + colour;
+            saveColorCache();
+          }
+          delete pendingFetches[key];
+          return badge;
         }
         logoCache[key] = null;
         saveCache();
@@ -113,11 +133,28 @@
     }
   }
 
+  function getTeamGradient(homeName, awayName) {
+    var hColor = getTeamColor(homeName) || getColorForName(homeName);
+    var aColor = getTeamColor(awayName) || getColorForName(awayName);
+    return "linear-gradient(135deg, " + hexToRgba(hColor, 0.12) + " 0%, " + hexToRgba(aColor, 0.12) + " 100%)";
+  }
+
+  function hexToRgba(hex, alpha) {
+    hex = hex.replace("#", "");
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    var r = parseInt(hex.substring(0, 2), 16);
+    var g = parseInt(hex.substring(2, 4), 16);
+    var b = parseInt(hex.substring(4, 6), 16);
+    return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+  }
+
   window.XionLogos = {
     getLeagueLogo: getLeagueLogo,
     getTeamLogo: getTeamLogo,
     getInitials: getInitials,
     getColorForName: getColorForName,
+    getTeamColor: getTeamColor,
+    getTeamGradient: getTeamGradient,
     fetchTeamLogo: fetchTeamLogo,
     fetchAllTeamLogos: fetchAllTeamLogos
   };
