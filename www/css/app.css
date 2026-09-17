@@ -29,10 +29,6 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .tv-sidebar-header{padding:16px;border-bottom:1px solid var(--border);flex-shrink:0}
 .tv-sidebar-brand{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .tv-sidebar-brand span{font-size:1.1rem;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.tv-sidebar-search{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);margin-bottom:12px}
-.tv-sidebar-search svg{flex-shrink:0;color:var(--muted)}
-.tv-sidebar-search input{flex:1;background:transparent;border:0;color:var(--text);font:1rem var(--sans);outline:none}
-.tv-sidebar-search input::placeholder{color:var(--muted)}
 
 /* === TABS === */
 .tv-sidebar-tabs{display:flex;gap:4px}

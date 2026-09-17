@@ -42,7 +42,6 @@
 
   var video = document.getElementById('video');
   var matchList = document.getElementById('match-list');
-  var matchSearch = document.getElementById('match-search');
   var playerEmpty = document.getElementById('player-empty');
   var playerBar = document.getElementById('player-bar');
   var playerLoading = document.getElementById('player-loading');
@@ -167,23 +166,7 @@
   }
 
   /* === RENDERING === */
-  function getFilteredMatches() {
-    var filter = (matchSearch.value || '').toLowerCase().trim();
-    var filtered = matchData;
-    if (filter) {
-      filtered = filtered.filter(function(m) {
-        return (m.name || '').toLowerCase().indexOf(filter) !== -1 ||
-               (m.league || '').toLowerCase().indexOf(filter) !== -1 ||
-               (m.home || '').toLowerCase().indexOf(filter) !== -1 ||
-               (m.away || '').toLowerCase().indexOf(filter) !== -1 ||
-               (m.sport || '').toLowerCase().indexOf(filter) !== -1;
-      });
-    }
-    return filtered;
-  }
-
   function renderList() {
-    var matches = getFilteredMatches();
     var html = '';
 
     if (currentTab === 'history') {
@@ -198,7 +181,7 @@
               '<div class="tv-match-teams">' + esc(h.name) + '</div>' +
               '<div class="tv-match-meta"><span class="tv-match-time">' + timeAgo(h.time) + '</span></div>' +
             '</div>' +
-            '<button class="remove-btn" data-remove-hist="' + i + '" title="Remove">✕</button>' +
+            '<button class="remove-btn" data-remove-hist="' + i + '" title="Remove">x</button>' +
           '</div>';
         }
       }
@@ -206,29 +189,22 @@
       return;
     }
 
-    // Split into live and scheduled
-    var liveMatches = [];
-    var scheduledMatches = [];
-    for (var i = 0; i < matches.length; i++) {
-      var m = matches[i];
-      if (m.status && (m.status.indexOf('MS_FINISH') !== -1 || m.status.indexOf('MS_FT') !== -1)) continue;
-      if (m.status && m.status.indexOf('MS_') !== -1) {
-        liveMatches.push(m);
-      } else {
-        scheduledMatches.push(m);
+    var displayMatches = [];
+    for (var i = 0; i < matchData.length; i++) {
+      var m = matchData[i];
+      if (currentTab === 'live') {
+        if (m.isLive) displayMatches.push(m);
+      } else if (currentTab === 'scheduled') {
+        if (!m.isLive) displayMatches.push(m);
       }
     }
 
-    var displayMatches = currentTab === 'scheduled' ? scheduledMatches : liveMatches;
     if (!displayMatches.length) {
-      html = '<div class="tv-sidebar-empty">' +
-        (filter ? 'No matches found' : (currentTab === 'scheduled' ? 'No upcoming matches' : 'No live matches')) +
-      '</div>';
+      html = '<div class="tv-sidebar-empty">' + (currentTab === 'scheduled' ? 'No upcoming matches' : 'No live matches') + '</div>';
       matchList.innerHTML = html;
       return;
     }
 
-    // Group by league
     var groups = {};
     var order = [];
     for (var i = 0; i < displayMatches.length; i++) {
@@ -257,12 +233,13 @@
         var sc = (mm.sport || 'others').toLowerCase().replace(/[^a-z]/g, '');
         var statusText = '';
         var statusClass = '';
-        if (mm.status) {
-          if (mm.status.indexOf('MS_FINISH') !== -1 || mm.status.indexOf('MS_FT') !== -1) continue;
-          if (mm.status.indexOf('FIRST_HALF') !== -1 || mm.status.indexOf('FIRST') !== -1) { statusText = '1ST HALF'; statusClass = 'tv-match-status'; }
-          else if (mm.status.indexOf('SECOND_HALF') !== -1 || mm.status.indexOf('SECOND') !== -1) { statusText = '2ND HALF'; statusClass = 'tv-match-status'; }
-          else if (mm.status.indexOf('HT') !== -1) { statusText = 'HALF TIME'; statusClass = 'tv-match-status'; }
-          else if (mm.status.indexOf('LIVE') !== -1 || mm.status.indexOf('PLAYING') !== -1) { statusText = 'LIVE'; statusClass = 'tv-match-status'; }
+        var ms = mm.matchStatus;
+        if (ms === 1 || ms === 3 || ms === 4 || ms === 5) {
+          statusText = mm.matchMinute ? mm.matchMinute + "'" : 'LIVE';
+          statusClass = 'tv-match-status';
+        } else if (ms === 2) {
+          statusText = 'HT';
+          statusClass = 'tv-match-status';
         }
 
         var teamLogoHtml = '';
@@ -383,17 +360,17 @@
     modalAwayLogo.src = awayLogo || '';
     modalAwayLogo.style.display = awayLogo ? '' : 'none';
 
-    if (match.status) {
-      if (match.status.indexOf('FIRST_HALF') !== -1) modalStatus.textContent = '1ST HALF';
-      else if (match.status.indexOf('SECOND_HALF') !== -1) modalStatus.textContent = '2ND HALF';
-      else if (match.status.indexOf('HT') !== -1) modalStatus.textContent = 'HALF TIME';
-      else if (match.status.indexOf('FINISH') !== -1 || match.status.indexOf('FT') !== -1) modalStatus.textContent = 'FINISHED';
-      else modalStatus.textContent = 'LIVE';
+    var ms = match.matchStatus;
+    if (ms === 1 || ms === 2 || ms === 3 || ms === 4 || ms === 5) {
+      if (ms === 1 || ms === 3 || ms === 4 || ms === 5) modalStatus.textContent = 'LIVE';
+      else if (ms === 2) modalStatus.textContent = 'HT';
+    } else if (ms === 6) {
+      modalStatus.textContent = 'FINISHED';
     } else {
       modalStatus.textContent = 'vs';
     }
 
-    var isLive = match.status && match.status.indexOf('MS_FINISH') === -1 && match.status.indexOf('MS_FT') === -1;
+    var isLive = match.isLive;
     modalWatch.style.display = isLive ? '' : 'none';
 
     matchModal.style.display = 'flex';
@@ -533,9 +510,6 @@
     localStorage.setItem('xion_history', JSON.stringify(streamHistory));
     renderList();
   }
-
-  /* === SEARCH === */
-  matchSearch.addEventListener('input', renderList);
 
   /* === INIT === */
   renderList();
