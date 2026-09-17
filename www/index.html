@@ -20,22 +20,30 @@
 
   <!-- TOP BAR -->
   <div class="topbar" id="topbar">
-    <div class="topbar-title">XionLive</div>
+    <div class="topbar-brand">
+      <div class="topbar-logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="currentColor"/></svg>
+      </div>
+      <div>
+        <div class="topbar-title">XIONLIVE</div>
+        <div class="topbar-subtitle">FOOTBALL - LIVE SCORES - MORE</div>
+      </div>
+    </div>
     <div class="search-wrap">
-      <span class="search-icon">&#128269;</span>
-      <input id="search-input" type="text" placeholder="Search matches, leagues..." autocomplete="off">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input id="search-input" type="text" placeholder="Search matches, leagues, teams..." autocomplete="off">
     </div>
     <div class="tabs" id="tabs">
       <button class="tab-btn active" data-sport="all">All</button>
-      <button class="tab-btn" data-sport="football">&#9917; Football</button>
-      <button class="tab-btn" data-sport="basketball">&#127936; Basketball</button>
-      <button class="tab-btn" data-sport="tennis">&#127934; Tennis</button>
-      <button class="tab-btn" data-sport="hockey">&#127954; Hockey</button>
-      <button class="tab-btn" data-sport="baseball">&#9918; Baseball</button>
-      <button class="tab-btn" data-sport="cricket">&#127951; Cricket</button>
-      <button class="tab-btn" data-sport="american-football">&#127944; NFL</button>
-      <button class="tab-btn" data-sport="volleyball">&#127950; Volleyball</button>
-      <button class="tab-btn" data-sport="others">&#127942; Others</button>
+      <button class="tab-btn" data-sport="football">Football</button>
+      <button class="tab-btn" data-sport="basketball">Basketball</button>
+      <button class="tab-btn" data-sport="tennis">Tennis</button>
+      <button class="tab-btn" data-sport="hockey">Hockey</button>
+      <button class="tab-btn" data-sport="baseball">Baseball</button>
+      <button class="tab-btn" data-sport="cricket">Cricket</button>
+      <button class="tab-btn" data-sport="american-football">NFL</button>
+      <button class="tab-btn" data-sport="volleyball">Volleyball</button>
+      <button class="tab-btn" data-sport="others">Others</button>
     </div>
   </div>
 
@@ -52,12 +60,20 @@
   <!-- PLAYER VIEW -->
   <div class="player-view" id="player-view">
     <div class="player-header" id="player-header">
-      <button class="player-back" id="player-back">&#10094;</button>
+      <button class="player-back" id="player-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
       <span class="player-title" id="player-title">XionLive</span>
       <div class="player-controls-top">
-        <button id="airplay-btn" title="AirPlay" style="display:none">&#9834;</button>
-        <button id="cast-btn" title="Cast" style="display:none">&#9836;</button>
-        <button id="fullscreen-btn" title="Fullscreen">&#9974;</button>
+        <button id="airplay-btn" title="AirPlay" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20"><path d="M5 17H4a2 2 0 01-2-2V5a2 2 0 012-2h16a2 2 0 012 2v10a2 2 0 01-2 2h-1"/><polygon points="12 15 17 21 7 21 12 15"/></svg>
+        </button>
+        <button id="cast-btn" title="Cast" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20"><path d="M2 16.1A5 5 0 015.9 20M2 12.05A9 9 0 019.95 20M2 8V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2h-6"/><circle cx="2" cy="20" r="1" fill="currentColor"/></svg>
+        </button>
+        <button id="fullscreen-btn" title="Fullscreen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+        </button>
       </div>
     </div>
     <div class="player-video">
@@ -75,9 +91,18 @@
 
   <!-- BOTTOM NAV -->
   <div class="bottomnav" id="bottomnav">
-    <button class="active" data-view="home"><span class="nav-icon">&#127968;</span>Home</button>
-    <button data-view="live"><span class="nav-icon">&#128308;</span>Live</button>
-    <button data-view="history"><span class="nav-icon">&#128337;</span>History</button>
+    <button class="active" data-view="home">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      <span>Home</span>
+    </button>
+    <button data-view="live">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="3"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/></svg>
+      <span>Live</span>
+    </button>
+    <button data-view="history">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>History</span>
+    </button>
   </div>
 
   <!-- TOASTS -->

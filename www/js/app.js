@@ -180,32 +180,68 @@
     return { groups: groups, order: order };
   }
 
+  function teamLogoHtml(teamName) {
+    var url = XionLogos.getTeamLogo(teamName);
+    var initials = XionLogos.getInitials(teamName);
+    var color = XionLogos.getColorForName(teamName);
+    if (url) {
+      return '<div class="card-team-logo"><img src="' + esc(url) + '" alt="" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div class="initials" style="display:none;background:' + color + ';width:100%;height:100%;align-items:center;justify-content:center;font-size:0.55rem">' + esc(initials) + '</div></div>';
+    }
+    return '<div class="card-team-logo"><div class="initials" style="background:' + color + ';width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:0.55rem">' + esc(initials) + '</div></div>';
+  }
+
   function renderMatchCard(match) {
     var idx = matchData.indexOf(match);
     var ir = resolvingMatchId === match.matchId;
-    var ip = playedIds.indexOf(match.matchId) !== -1;
     var leagueLogo = XionLogos.getLeagueLogo(match.league);
     var sportClass = (match.sport || "others").toLowerCase().replace(/[^a-z]/g, "");
-    var initials = XionLogos.getInitials(match.home || "?") + " " + XionLogos.getInitials(match.away || "?");
-    var color = XionLogos.getColorForName(match.home || "team");
 
-    var logoHtml = leagueLogo
-      ? '<img src="' + esc(leagueLogo) + '" alt="" onerror="this.parentElement.innerHTML=\'' + esc(XionLogos.getSportIcon(match.sport)) + '\'">'
-      : esc(XionLogos.getSportIcon(match.sport));
+    var leagueLogoHtml = leagueLogo
+      ? '<div class="card-league-logo"><img src="' + esc(leagueLogo) + '" alt="" onerror="this.style.display=\'none\'"></div>'
+      : '<div class="card-league-logo"><span class="logo-fallback">' + esc((match.league || "?").substring(0, 2).toUpperCase()) + '</span></div>';
 
-    return '<div class="match-card' + (ir ? " resolving" : "") + (ip ? " played" : "") + '" data-idx="' + idx + '">' +
-      '<div class="card-header">' +
-        '<div class="card-logo" style="background:' + color + '20">' + logoHtml + '</div>' +
-        '<div class="card-league">' + esc(match.league || match.sport || "Live") + '</div>' +
+    return '<div class="match-card' + (ir ? " resolving" : "") + '" data-idx="' + idx + '">' +
+      '<div class="card-league-row">' +
+        leagueLogoHtml +
+        '<span class="card-league-name">' + esc(match.league || match.sport || "Live") + '</span>' +
+        '<span class="card-live-badge"><span class="live-dot"></span>LIVE</span>' +
       '</div>' +
       '<div class="card-teams">' +
-        '<div class="card-team">' + esc(match.home || "?") + '</div>' +
-        '<div class="card-vs">vs</div>' +
-        '<div class="card-team">' + esc(match.away || "?") + '</div>' +
+        '<div class="card-team-row">' +
+          teamLogoHtml(match.home) +
+          '<span class="card-team-name">' + esc(match.home || "?") + '</span>' +
+        '</div>' +
+        '<div class="card-team-row">' +
+          teamLogoHtml(match.away) +
+          '<span class="card-team-name">' + esc(match.away || "?") + '</span>' +
+        '</div>' +
       '</div>' +
       '<div class="card-footer">' +
         '<span class="sport-badge ' + sportClass + '">' + esc(match.sport || "live") + '</span>' +
-        '<span class="live-badge"><span class="live-dot"></span>LIVE</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderHero(matches) {
+    if (!matches.length) return "";
+    var featured = matches[0];
+    var leagueLogo = XionLogos.getLeagueLogo(featured.league);
+    var leagueLogoHtml = leagueLogo
+      ? '<img src="' + esc(leagueLogo) + '" alt="" style="width:18px;height:18px;border-radius:3px">'
+      : '';
+
+    return '<div class="hero-banner">' +
+      '<div class="hero-glow"></div>' +
+      '<div class="hero-inner">' +
+        '<div class="hero-league">' + leagueLogoHtml + esc(featured.league || "Live Football") + '</div>' +
+        '<div class="hero-headline">' +
+          esc(featured.home || "Featured") + ' <span>vs</span> ' + esc(featured.away || "Match") +
+        '</div>' +
+        '<div class="hero-desc">Follow it all live on XionLive.</div>' +
+        '<button class="hero-cta" data-idx="' + matchData.indexOf(featured) + '">' +
+          '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M8 5v14l11-7z"/></svg>' +
+          'Watch Live' +
+        '</button>' +
       '</div>' +
     '</div>';
   }
@@ -213,34 +249,24 @@
   function renderContent() {
     var matches = getFilteredMatches();
     if (!matches.length) {
-      matchContent.innerHTML = '<div class="empty-state"><div class="empty-icon">&#127941;</div><p>' +
+      matchContent.innerHTML = '<div class="empty-state"><p>' +
         (searchInput.value ? "No matches found" : "No live matches") + '</p></div>';
       return;
     }
 
     if (currentView === "home") {
-      var featured = matches.slice(0, 6);
-      var rest = matches.slice(6);
-      var html = "";
-      if (featured.length) {
-        html += '<div class="section-title">Live Now</div>';
+      var html = renderHero(matches);
+      var remaining = matches.slice(1);
+      if (remaining.length) {
+        html += '<div class="section-header"><div class="section-title"><span class="live-indicator"></span>LIVE NOW</div></div>';
         html += '<div class="match-grid">';
-        for (var i = 0; i < featured.length; i++) html += renderMatchCard(featured[i]);
+        for (var i = 0; i < remaining.length; i++) html += renderMatchCard(remaining[i]);
         html += '</div>';
-      }
-      if (rest.length) {
-        var groups = getLeagueGroups(rest);
-        for (var oi = 0; oi < groups.order.length; oi++) {
-          html += '<div class="section-title">' + esc(groups.order[oi]) + '</div>';
-          html += '<div class="match-grid">';
-          var lm = groups.groups[groups.order[oi]];
-          for (var j = 0; j < lm.length; j++) html += renderMatchCard(lm[j]);
-          html += '</div>';
-        }
       }
       matchContent.innerHTML = html;
     } else if (currentView === "live") {
-      var html = '<div class="match-grid" style="padding-top:8px">';
+      var html = '<div class="section-header"><div class="section-title"><span class="live-indicator"></span>ALL LIVE</div></div>';
+      html += '<div class="match-grid">';
       for (var i = 0; i < matches.length; i++) html += renderMatchCard(matches[i]);
       html += '</div>';
       matchContent.innerHTML = html;
@@ -251,25 +277,24 @@
 
   function renderHistoryView() {
     if (!streamHistory.length) {
-      matchContent.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128337;</div><p>No watch history</p></div>';
+      matchContent.innerHTML = '<div class="empty-state"><p>No watch history</p></div>';
       return;
     }
-    var html = '<div class="match-grid" style="padding-top:8px">';
+    var html = '<div class="section-header"><div class="section-title">RECENTLY WATCHED</div></div>';
+    html += '<div class="match-grid single-col">';
     for (var i = 0; i < streamHistory.length; i++) {
       var h = streamHistory[i];
       if (!h || !h.name) continue;
       html += '<div class="match-card" data-hist-idx="' + i + '">' +
-        '<div class="card-header">' +
-          '<div class="card-logo" style="background:var(--accent)">&#9654;</div>' +
-          '<div class="card-league">Saved Stream</div>' +
+        '<div class="card-league-row">' +
+          '<div class="card-league-logo"><span class="logo-fallback" style="background:var(--accent);color:#fff;width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:3px;font-size:0.5rem">&#9654;</span></div>' +
+          '<span class="card-league-name" style="color:var(--muted)">SAVED STREAM</span>' +
+          '<span style="font-size:0.65rem;color:var(--muted)">' + timeAgo(h.time) + '</span>' +
         '</div>' +
         '<div class="card-teams">' +
-          '<div class="card-team">' + esc(h.name) + '</div>' +
+          '<div class="card-team-row"><span class="card-team-name">' + esc(h.name) + '</span></div>' +
         '</div>' +
-        '<div class="card-footer">' +
-          '<span class="sport-badge others">saved</span>' +
-          '<span class="live-badge" style="color:var(--muted)">' + timeAgo(h.time) + '</span>' +
-        '</div>' +
+        '<div class="card-footer"><span class="sport-badge others">saved</span></div>' +
       '</div>';
     }
     html += '</div>';
@@ -647,6 +672,12 @@
   });
 
   matchContent.addEventListener("click", function(e) {
+    var heroBtn = e.target.closest(".hero-cta");
+    if (heroBtn) {
+      var idx = heroBtn.getAttribute("data-idx");
+      if (idx !== null) playMatch(parseInt(idx, 10));
+      return;
+    }
     var card = e.target.closest(".match-card");
     if (!card) return;
     var idx = card.getAttribute("data-idx");
