@@ -1,0 +1,35 @@
+{
+  "appId": "com.xionlive.brugge",
+  "appName": "XionLive",
+  "webDir": "www",
+  "server": {
+    "url": "https://xionlive.vercel.app",
+    "cleartext": false,
+    "allowNavigation": [
+      "*"
+    ]
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0a0a0c",
+      "overlaysWebView": false
+    },
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 1500,
+      "backgroundColor": "#0a0a0c",
+      "showSpinner": false,
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "backgroundColor": "#0a0a0c",
+    "allowsBackForwardNavigationGestures": true,
+    "preferredContentMode": "mobile"
+  }
+}
