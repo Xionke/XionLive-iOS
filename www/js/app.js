@@ -27,6 +27,10 @@
   var headerTimer = null;
   var pullRefreshing = false;
   var lastRefresh = 0;
+  var previousScores = {};
+  var workingHost = null;
+  var isDarkTheme = true;
+  var contextMenuEl = null;
 
   var video = document.getElementById("video");
   var playerView = document.getElementById("player-view");
@@ -51,6 +55,11 @@
   try {
     favorites = JSON.parse(localStorage.getItem("xion_favorites") || "[]");
   } catch(e) { favorites = []; }
+
+  try {
+    isDarkTheme = localStorage.getItem("xion_theme") !== "light";
+  } catch(e) { isDarkTheme = true; }
+  if (!isDarkTheme) document.documentElement.classList.add("light-theme");
 
   function log() { var a = ["[xion-app]"]; for (var i = 0; i < arguments.length; i++) a.push(arguments[i]); console.log.apply(console, a); }
   function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
@@ -133,6 +142,24 @@
     tickerEl.innerHTML = html;
   }
 
+  function detectScoreChanges() {
+    for (var i = 0; i < matchData.length; i++) {
+      var m = matchData[i];
+      var key = m.matchId;
+      var prev = previousScores[key];
+      if (prev && m.homeScore !== null && m.awayScore !== null) {
+        if (prev.home !== m.homeScore || prev.away !== m.awayScore) {
+          if (prev.home !== undefined) {
+            showToast("GOAL! " + m.home + " " + m.homeScore + " - " + m.awayScore + " " + m.away);
+          }
+        }
+      }
+      if (m.homeScore !== null && m.awayScore !== null) {
+        previousScores[key] = { home: m.homeScore, away: m.awayScore };
+      }
+    }
+  }
+
   /* === MATCH LOADING === */
   function loadMatches() {
     var workingHost = null;
@@ -187,6 +214,7 @@
       }
       matchData = merged;
       lastRefresh = Date.now();
+      detectScoreChanges();
       renderContent();
       updateTicker();
       XionLogos.fetchAllTeamLogos(matchData);
@@ -449,6 +477,7 @@
     html += '<div class="more-item" data-action="history"><span class="more-icon">&#128337;</span><span>Watch History</span><span class="more-badge">' + streamHistory.length + '</span><span class="more-arrow">&#8250;</span></div>';
     html += '</div>';
     html += '<div class="more-section">';
+    html += '<div class="more-item" data-action="theme"><span class="more-icon">' + (isDarkTheme ? '&#9790;' : '&#9728;') + '</span><span>' + (isDarkTheme ? 'Dark Mode' : 'Light Mode') + '</span><span class="more-arrow">&#8250;</span></div>';
     html += '<div class="more-item" data-action="about"><span class="more-icon">&#9432;</span><span>About XionLive</span><span class="more-arrow">&#8250;</span></div>';
     html += '</div>';
     html += '<div class="more-section">';
@@ -457,9 +486,17 @@
     html += '<div class="stat-item"><div class="stat-value">' + getLiveMatches().length + '</div><div class="stat-label">Live Now</div></div>';
     html += '<div class="stat-item"><div class="stat-value">' + favorites.length + '</div><div class="stat-label">Favorites</div></div>';
     html += '</div>';
+    html += '<div style="text-align:center;padding:0 16px 16px"><span class="host-status" id="host-status">checking</span></div>';
     html += '</div>';
     html += '</div>';
     matchContent.innerHTML = html;
+    if (workingHost) {
+      var statusEl = document.getElementById("host-status");
+      if (statusEl) {
+        statusEl.textContent = workingHost.replace("https://", "").split(".")[0] + " online";
+        statusEl.className = "host-status";
+      }
+    }
   }
 
   function renderFavoritesView() {
@@ -906,6 +943,7 @@
   });
 
   matchContent.addEventListener("click", function(e) {
+    if (contextMenuEl) return;
     var heroBtn = e.target.closest(".hero-cta");
     if (heroBtn) {
       var idx = heroBtn.getAttribute("data-idx");
@@ -929,6 +967,9 @@
         renderContent();
       } else if (action === "history") {
         currentView = "history";
+        renderContent();
+      } else if (action === "theme") {
+        window.toggleTheme();
         renderContent();
       } else if (action === "about") {
         showAboutModal();
@@ -964,6 +1005,32 @@
     }
   });
 
+  (function() {
+    var pressTimer = null;
+    var pressTarget = null;
+
+    matchContent.addEventListener("touchstart", function(e) {
+      var card = e.target.closest(".match-card");
+      if (!card) return;
+      var idx = card.getAttribute("data-idx");
+      if (idx === null) return;
+      pressTarget = card;
+      pressTimer = setTimeout(function() {
+        showContextMenu(e, parseInt(idx, 10));
+      }, 500);
+    }, { passive: true });
+
+    matchContent.addEventListener("touchmove", function() {
+      clearTimeout(pressTimer);
+      pressTarget = null;
+    }, { passive: true });
+
+    matchContent.addEventListener("touchend", function() {
+      clearTimeout(pressTimer);
+      pressTarget = null;
+    }, { passive: true });
+  })();
+
   function showAboutModal() {
     var modal = document.createElement("div");
     modal.className = "modal-overlay";
@@ -973,13 +1040,18 @@
       '<div class="modal-body">' +
         '<div class="about-logo"><svg viewBox="0 0 24 24" fill="none" width="48" height="48"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="var(--accent)"/></svg></div>' +
         '<h2 class="about-name">XIONLIVE</h2>' +
-        '<p class="about-version">v2.0.0</p>' +
+        '<p class="about-version">v2.1.0</p>' +
         '<div class="about-features">' +
           '<div class="about-feature">Live scores across 16 sports</div>' +
           '<div class="about-feature">HD streams with Chromecast & AirPlay</div>' +
           '<div class="about-feature">Favorite teams & leagues</div>' +
-          '<div class="about-feature">Pull to refresh</div>' +
-          '<div class="about-feature">Match detail view</div>' +
+          '<div class="about-feature">Match detail view with standings</div>' +
+          '<div class="about-feature">Score ticker & pull to refresh</div>' +
+          '<div class="about-feature">Sleep timer & audio-only mode</div>' +
+          '<div class="about-feature">Long-press context menu</div>' +
+          '<div class="about-feature">Dark & light theme</div>' +
+          '<div class="about-feature">Share matches</div>' +
+          '<div class="about-feature">Score change alerts</div>' +
         '</div>' +
         '<div class="about-credits">' +
           '<p>Powered by HLS.js, TheSportsDB, Capacitor</p>' +
@@ -1069,6 +1141,14 @@
             '<svg viewBox="0 0 24 24" fill="' + (isFav ? "currentColor" : "none") + '" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>' +
             '<span>' + (isFav ? "Favorited" : "Favorite") + '</span>' +
           '</button>' +
+          '<button class="detail-action-btn detail-share-btn" data-detail-share="' + idx + '">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>' +
+            '<span>Share</span>' +
+          '</button>' +
+          (match.league ? '<button class="detail-action-btn" data-detail-standings="' + esc(match.league) + '">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>' +
+            '<span>Standings</span>' +
+          '</button>' : '') +
           (match.isLive ? '<button class="detail-action-btn detail-watch-btn" data-detail-watch="' + idx + '">' +
             '<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z"/></svg>' +
             '<span>Watch Live</span>' +
@@ -1090,6 +1170,21 @@
       watchBtn.addEventListener("click", function() {
         modal.remove();
         playMatch(idx);
+      });
+    }
+
+    var shareBtn = modal.querySelector("[data-detail-share]");
+    if (shareBtn) {
+      shareBtn.addEventListener("click", function() {
+        shareMatch(match);
+      });
+    }
+
+    var standingsBtn = modal.querySelector("[data-detail-standings]");
+    if (standingsBtn) {
+      standingsBtn.addEventListener("click", function() {
+        modal.remove();
+        showStandings(match.league);
       });
     }
   }
@@ -1183,4 +1278,163 @@
   /* === INIT === */
   loadMatches();
   setInterval(loadMatches, 30000);
+  setInterval(function() {
+    var statusEl = document.getElementById("host-status");
+    if (statusEl && workingHost) {
+      statusEl.textContent = workingHost.replace("https://", "").split(".")[0];
+      statusEl.className = "host-status";
+    }
+  }, 5000);
+
+  /* === ONBOARDING === */
+  (function() {
+    var seen = localStorage.getItem("xion_onboarding_done");
+    if (seen) return;
+    var overlay = document.getElementById("onboarding");
+    if (!overlay) return;
+    overlay.style.display = "flex";
+    var steps = [
+      "Live scores, HD streams, and your favorite teams — all in one place.",
+      "Tap the heart on any match card to star your favorite teams. They'll always appear at the top.",
+      "Pull down to refresh, tap Live for all matches, or use search to find any game."
+    ];
+    var step = 0;
+    var dots = overlay.querySelectorAll(".onboarding-dot");
+    var desc = overlay.querySelector(".onboarding-desc");
+    var btn = document.getElementById("onboarding-btn");
+    var skip = document.getElementById("onboarding-skip");
+
+    function goTo(s) {
+      step = s;
+      dots.forEach(function(d, i) { d.classList.toggle("active", i === step); });
+      desc.textContent = steps[step];
+      btn.textContent = step === 2 ? "Start Watching" : "Next";
+    }
+
+    btn.addEventListener("click", function() {
+      if (step < 2) { goTo(step + 1); } else { close(); }
+    });
+    skip.addEventListener("click", close);
+    function close() {
+      overlay.style.display = "none";
+      localStorage.setItem("xion_onboarding_done", "1");
+    }
+  })();
+
+  /* === THEME TOGGLE === */
+  window.toggleTheme = function() {
+    isDarkTheme = !isDarkTheme;
+    if (isDarkTheme) {
+      document.documentElement.classList.remove("light-theme");
+    } else {
+      document.documentElement.classList.add("light-theme");
+    }
+    localStorage.setItem("xion_theme", isDarkTheme ? "dark" : "light");
+  };
+
+  /* === SHARE MATCH === */
+  function shareMatch(match) {
+    var text = match.home + " vs " + match.away;
+    if (match.homeScore !== null) text += " (" + match.homeScore + " - " + match.awayScore + ")";
+    text += " — " + (match.league || "Live") + " on XionLive";
+    if (navigator.share) {
+      navigator.share({ title: "XionLive", text: text }).catch(function() {});
+    } else {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() { showToast("Copied to clipboard"); });
+      }
+    }
+  }
+  window.shareMatch = shareMatch;
+
+  /* === CONTEXT MENU === */
+  function showContextMenu(e, idx) {
+    closeContextMenu();
+    var match = matchData[idx];
+    if (!match) return;
+    var isFav = isFavorite(match);
+    var menu = document.createElement("div");
+    menu.className = "context-menu";
+    menu.style.left = Math.min(e.clientX || 100, window.innerWidth - 200) + "px";
+    menu.style.top = Math.min(e.clientY || 100, window.innerHeight - 200) + "px";
+    menu.innerHTML =
+      '<div class="context-menu-item" data-cm="watch"><span class="cm-icon">&#9654;</span>Watch Match</div>' +
+      '<div class="context-menu-item" data-cm="fav"><span class="cm-icon">' + (isFav ? '&#9733;' : '&#9734;') + '</span>' + (isFav ? 'Unfavorite' : 'Favorite') + '</div>' +
+      '<div class="context-menu-item" data-cm="share"><span class="cm-icon">&#128279;</span>Share</div>';
+    document.body.appendChild(menu);
+    contextMenuEl = menu;
+
+    menu.querySelector("[data-cm='watch']").addEventListener("click", function() {
+      closeContextMenu(); playMatch(idx);
+    });
+    menu.querySelector("[data-cm='fav']").addEventListener("click", function() {
+      closeContextMenu(); toggleFavorite(match.home);
+    });
+    menu.querySelector("[data-cm='share']").addEventListener("click", function() {
+      closeContextMenu(); shareMatch(match);
+    });
+
+    setTimeout(function() {
+      document.addEventListener("click", closeContextMenu, { once: true });
+    }, 10);
+  }
+  function closeContextMenu() {
+    if (contextMenuEl) { contextMenuEl.remove(); contextMenuEl = null; }
+  }
+  window.closeContextMenu = closeContextMenu;
+
+  /* === STANDINGS TABLE === */
+  function showStandings(league) {
+    var modal = document.createElement("div");
+    modal.className = "modal-overlay";
+    modal.innerHTML = '<div class="modal-sheet">' +
+      '<div class="modal-handle"></div>' +
+      '<div class="modal-header"><span class="modal-title">' + esc(league || "Standings") + '</span><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">&times;</button></div>' +
+      '<div class="modal-body"><div class="standings-loading">Loading standings...</div></div>' +
+    '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener("click", function(e) { if (e.target === modal) modal.remove(); });
+
+    var body = modal.querySelector(".modal-body");
+
+    var leagueId = null;
+    var leagueMap = {
+      "premier league": 2021, "la liga": 2014, "serie a": 2019,
+      "bundesliga": 2002, "ligue 1": 2015, "eredivisie": 2003,
+      "champions league": 2001, "europa league": 2146, "conference league": 2147,
+      "jupiler pro league": 2012, "belgian pro league": 2012, "pro league": 2012
+    };
+    var lKey = (league || "").toLowerCase().trim();
+    for (var k in leagueMap) {
+      if (lKey.indexOf(k) !== -1 || k.indexOf(lKey) !== -1) { leagueId = leagueMap[k]; break; }
+    }
+
+    if (!leagueId) {
+      body.innerHTML = '<div class="standings-loading">Standings not available for this league</div>';
+      return;
+    }
+
+    fetch("https://api.football-data.org/v4/competitions/" + leagueId + "/standings", {
+      headers: { "X-Auth-Token": "b1675e81be5b4a0d987ed68e7a66e0a2" }
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var table = d.standings && d.standings[0] && d.standings[0].table;
+        if (!table || !table.length) {
+          body.innerHTML = '<div class="standings-loading">No standings data available</div>';
+          return;
+        }
+        var html = '<table class="standings-table"><thead><tr><th class="pos">#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th class="pts">Pts</th></tr></thead><tbody>';
+        for (var i = 0; i < Math.min(table.length, 20); i++) {
+          var t = table[i];
+          html += '<tr><td class="pos">' + t.position + '</td><td class="team">' + esc(t.team.shortName || t.team.name) + '</td><td>' + t.playedGames + '</td><td>' + t.won + '</td><td>' + t.draw + '</td><td>' + t.lost + '</td><td>' + (t.goalDifference > 0 ? "+" : "") + t.goalDifference + '</td><td class="pts">' + t.points + '</td></tr>';
+        }
+        html += '</tbody></table>';
+        body.innerHTML = html;
+      })
+      .catch(function() {
+        body.innerHTML = '<div class="standings-loading">Failed to load standings</div>';
+      });
+  }
+  window.showStandings = showStandings;
 })();

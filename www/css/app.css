@@ -756,3 +756,182 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   font-weight: 600; margin-bottom: 16px;
   padding: 8px; background: rgba(30,144,255,0.1); border-radius: 8px;
 }
+
+/* === LIGHT THEME === */
+html.light-theme {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface2: #f0f0f2;
+  --surface3: #e8e8ea;
+  --card: #ffffff;
+  --border: #d8d8dd;
+  --text: #1a1a1e;
+  --muted: #6b6b78;
+  --accent: #0066cc;
+  --accent2: #0088ee;
+}
+
+/* === CARD ENTRANCE ANIMATION === */
+@keyframes cardFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.match-card {
+  animation: cardFadeIn 0.3s ease both;
+}
+.match-grid .match-card:nth-child(1) { animation-delay: 0.02s; }
+.match-grid .match-card:nth-child(2) { animation-delay: 0.04s; }
+.match-grid .match-card:nth-child(3) { animation-delay: 0.06s; }
+.match-grid .match-card:nth-child(4) { animation-delay: 0.08s; }
+.match-grid .match-card:nth-child(5) { animation-delay: 0.10s; }
+.match-grid .match-card:nth-child(6) { animation-delay: 0.12s; }
+.match-grid .match-card:nth-child(7) { animation-delay: 0.14s; }
+.match-grid .match-card:nth-child(8) { animation-delay: 0.16s; }
+.match-grid .match-card:nth-child(9) { animation-delay: 0.18s; }
+.match-grid .match-card:nth-child(10) { animation-delay: 0.20s; }
+
+/* === SCORE CHANGE ANIMATION === */
+@keyframes scoreFlash {
+  0% { color: var(--ok); transform: scale(1.3); }
+  100% { color: var(--text); transform: scale(1); }
+}
+.card-team-score.updated {
+  animation: scoreFlash 0.6s ease;
+}
+
+/* === ONBOARDING === */
+.onboarding-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.85);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+.onboarding-sheet {
+  width: 90%; max-width: 360px;
+  background: var(--surface); border-radius: 20px;
+  padding: 32px 24px; text-align: center;
+}
+.onboarding-logo {
+  width: 64px; height: 64px; border-radius: 16px;
+  background: linear-gradient(135deg, var(--accent), #0066cc);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; margin: 0 auto 20px;
+}
+.onboarding-title {
+  font-size: 1.3rem; font-weight: 900; margin-bottom: 8px;
+  background: linear-gradient(135deg, #fff 0%, var(--accent2) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.onboarding-desc {
+  font-size: 0.85rem; color: var(--muted); line-height: 1.5;
+  margin-bottom: 24px;
+}
+.onboarding-dots {
+  display: flex; justify-content: center; gap: 8px; margin-bottom: 24px;
+}
+.onboarding-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border); transition: background 0.3s;
+}
+.onboarding-dot.active { background: var(--accent); }
+.onboarding-btn {
+  width: 100%; padding: 14px; border-radius: 12px;
+  background: var(--accent); color: #fff;
+  font: 700 0.95rem var(--sans); border: 0; cursor: pointer;
+  transition: transform 0.15s;
+}
+.onboarding-btn:active { transform: scale(0.97); }
+.onboarding-skip {
+  margin-top: 12px; font-size: 0.8rem; color: var(--muted);
+  background: none; border: 0; cursor: pointer;
+}
+
+/* === SHARE BUTTON === */
+.detail-share-btn {
+  background: rgba(30,144,255,0.1); border-color: rgba(30,144,255,0.3);
+  color: var(--accent);
+}
+
+/* === STANDINGS TABLE === */
+.standings-table {
+  width: 100%; border-collapse: collapse; margin-top: 12px;
+  font-size: 0.75rem;
+}
+.standings-table th {
+  padding: 6px 4px; text-align: left; font-weight: 700;
+  color: var(--muted); text-transform: uppercase; font-size: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.standings-table td {
+  padding: 6px 4px; border-bottom: 1px solid rgba(30,30,40,0.3);
+}
+.standings-table .pos { width: 24px; text-align: center; font-weight: 700; color: var(--muted); }
+.standings-table .team { font-weight: 600; }
+.standings-table .pts { width: 28px; text-align: center; font-weight: 800; color: var(--accent); }
+.standings-loading {
+  text-align: center; padding: 16px; color: var(--muted); font-size: 0.8rem;
+}
+
+/* === CONTEXT MENU === */
+.context-menu {
+  position: fixed; z-index: 400;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  animation: contextPop 0.15s ease;
+  min-width: 180px;
+}
+@keyframes contextPop {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+.context-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; cursor: pointer;
+  font-size: 0.85rem; font-weight: 500;
+  transition: background 0.1s;
+  border-bottom: 1px solid var(--border);
+}
+.context-menu-item:last-child { border-bottom: 0; }
+.context-menu-item:active { background: var(--surface2); }
+.context-menu-item .cm-icon { width: 20px; text-align: center; font-size: 1rem; }
+
+/* === HOST STATUS BADGE === */
+.host-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.65rem; color: var(--ok); font-weight: 600;
+  margin-left: auto;
+}
+.host-status.degraded { color: var(--ht); }
+.host-status.offline { color: var(--err); }
+
+/* === MATCH STATS === */
+.detail-stats {
+  margin-top: 16px; padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.detail-stats-title {
+  font-size: 0.75rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+.stat-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 8px;
+}
+.stat-row .stat-label {
+  width: 80px; text-align: right; font-size: 0.7rem;
+  color: var(--muted); font-weight: 500;
+}
+.stat-row .stat-bar-wrap {
+  flex: 1; height: 4px; background: var(--surface3);
+  border-radius: 2px; overflow: hidden;
+}
+.stat-row .stat-bar {
+  height: 100%; border-radius: 2px; transition: width 0.5s ease;
+}
+.stat-row .stat-bar.home { background: var(--accent); }
+.stat-row .stat-bar.away { background: var(--live); }
+.stat-row .stat-val {
+  width: 28px; font-size: 0.7rem; font-weight: 700; text-align: center;
+}
