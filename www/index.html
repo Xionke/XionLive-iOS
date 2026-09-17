@@ -1,20 +1,962 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <title>XionLive</title>
+  <title>XionLive Brugge</title>
+  <script src="hls.min.js"></script>
+  <script src="js/match-parser.js"></script>
+  <script src="js/xion-resolver.js"></script>
+  <script>window.__onGCastApiAvailable=function(available){if(available){console.log('[xion] Cast API available')}}</script>
+  <script src="https://www.gstatic.com/cv2/cast_sender.js?loadCastFramework=1"></script>
   <style>
-    body{margin:0;background:#0a0a0c;color:#e8e8ec;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center}
-    .loading{font-size:1.1rem;opacity:0.7}
-    .spinner{width:32px;height:32px;border:3px solid rgba(255,255,255,0.1);border-top-color:#6c5ce7;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px}
-    @keyframes spin{to{transform:rotate(360deg)}}
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0a0a0c;--surface:#111114;--surface2:#18181d;--surface3:#1f1f26;
+      --border:#2a2a33;--text:#e8e8ec;--muted:#6b6b78;--accent:#6c5ce7;
+      --accent2:#a29bfe;--ok:#00b894;--err:#ff6b6b;--live:#ff4757;
+      --sans:system-ui,-apple-system,sans-serif;
+      --safe-b:env(safe-area-inset-bottom,0px);
+    }
+    html,body{height:100%;overflow:hidden}
+    body{font:13px/1.5 var(--sans);color:var(--text);background:var(--bg)}
+
+    /* === DESKTOP LAYOUT === */
+    .layout{display:grid;grid-template-columns:1fr 320px;grid-template-rows:auto 1fr;height:100vh;height:100dvh}
+    .header{grid-column:1/-1;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:16px}
+    .header h1{font-size:1.1rem;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .header .status{font-size:0.75rem;color:var(--muted);margin-left:auto}
+    .header .status.on{color:var(--ok)}
+
+    .main{display:flex;flex-direction:column;overflow:hidden;min-width:0}
+    .input-bar{padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--border)}
+    .input-row{display:flex;gap:8px}
+    .input-row input{flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font:0.9rem var(--sans);outline:none;overflow-wrap:anywhere}
+    .input-row input:focus{border-color:var(--accent)}
+    .input-row input::placeholder{color:#444}
+    .input-row button{padding:10px 20px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:600 0.85rem var(--sans);cursor:pointer;white-space:nowrap}
+    .input-row button:disabled{opacity:0.4;cursor:wait}
+    .input-row button.danger{background:var(--err)}
+    .input-modes{display:flex;gap:6px;margin-top:8px}
+    .input-modes button{padding:4px 12px;border:1px solid var(--border);border-radius:20px;background:transparent;color:var(--muted);font:0.75rem var(--sans);cursor:pointer}
+    .input-modes button.active{border-color:var(--accent);color:var(--accent);background:rgba(108,92,231,0.1)}
+    .error-msg{margin-top:8px;padding:8px 12px;border-radius:6px;background:rgba(255,107,107,0.1);color:var(--err);font-size:0.8rem;display:none}
+    .error-msg.show{display:block}
+
+    .player-wrap{flex:1;display:flex;align-items:center;justify-content:center;background:#000;position:relative;overflow:hidden;min-height:0}
+    .player-wrap video{width:100%;height:100%;object-fit:contain;display:block}
+    .player-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);user-select:none}
+    .player-empty svg{width:64px;height:64px;opacity:0.3}
+    .player-empty p{font-size:0.85rem}
+
+    .player-bar{padding:8px 20px;background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;font-size:0.78rem;color:var(--muted);min-height:38px}
+    .player-bar .live-dot{width:8px;height:8px;border-radius:50%;background:var(--live);animation:pulse 1.5s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    .player-bar .stream-info{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .player-bar .export-btns{display:flex;gap:6px}
+    .player-bar .export-btns button{padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);font:0.72rem var(--sans);cursor:pointer}
+    .player-bar .player-controls{display:flex;gap:4px;margin-left:8px;padding-left:8px;border-left:1px solid var(--border)}
+    .player-bar .player-controls button{padding:4px;border:0;border-radius:4px;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color 0.15s}
+    .player-bar .player-controls button:hover{color:var(--text)}
+    .player-bar .player-controls button.active{color:var(--accent)}
+
+    .sidebar{background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;min-height:0}
+    .sidebar-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
+    .sidebar-tabs button{flex:1;padding:10px 0;border:0;background:transparent;color:var(--muted);font:600 0.78rem var(--sans);cursor:pointer;border-bottom:2px solid transparent}
+    .sidebar-tabs button.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+    .tab-panel{display:none;flex-direction:column;flex:1;min-height:0}
+    .tab-panel.active{display:flex}
+
+    .sidebar-header{padding:10px 16px;border-bottom:1px solid var(--border);font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .sidebar-header button{padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);font:0.7rem var(--sans);cursor:pointer}
+
+    .sidebar-list{flex:1;overflow-y:auto;padding:4px 0;min-height:0}
+    .sidebar-list::-webkit-scrollbar{width:4px}
+    .sidebar-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+    .match-item{padding:10px 16px;cursor:pointer;border-left:3px solid transparent}
+    .match-item:active{background:var(--surface2)}
+    .match-item.active{border-left-color:var(--live);background:rgba(255,71,87,0.08)}
+    .match-item .league{font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px}
+    .match-item .teams{font-size:0.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .match-item .sport-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.65rem;font-weight:600;text-transform:uppercase;margin-top:3px}
+    .match-item .sport-badge.football{background:rgba(0,184,148,0.15);color:var(--ok)}
+    .match-item .sport-badge.basketball{background:rgba(255,183,77,0.15);color:#ffb74d}
+    .match-item .sport-badge.tennis{background:rgba(162,155,254,0.15);color:var(--accent2)}
+    .match-item .sport-badge.hockey{background:rgba(129,199,132,0.15);color:#81c784}
+    .match-item .sport-badge.others{background:rgba(107,107,120,0.15);color:var(--muted)}
+    .match-item.resolving{opacity:0.5}
+    .match-item.resolving::after{content:'Resolving...';display:block;font-size:0.7rem;color:var(--accent);margin-top:2px}
+    .match-item.played{opacity:0.35}
+    .match-item.played .teams::after{content:' \2713';color:var(--ok);font-size:0.75rem}
+    .sidebar-empty{padding:30px 16px;text-align:center;color:var(--muted);font-size:0.8rem}
+
+    .sidebar-item{padding:10px 16px;cursor:pointer;border-left:3px solid transparent}
+    .sidebar-item:active{background:var(--surface2)}
+    .sidebar-item.active{border-left-color:var(--accent)}
+    .sidebar-item .name{font-size:0.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .sidebar-item .meta{font-size:0.7rem;color:var(--muted);margin-top:2px}
+    .sidebar-item .remove{float:right;background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.75rem;padding:2px 4px;opacity:0}
+    .sidebar-item:active .remove{opacity:1}
+
+    .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:8px 16px;border-radius:6px;background:var(--surface3);color:var(--text);font-size:0.8rem;border:1px solid var(--border);z-index:999;opacity:0;transition:opacity 0.2s;pointer-events:none}
+    .toast.show{opacity:1}
+
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000}
+    .modal-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;min-width:280px;max-width:400px}
+    .modal-title{font-size:0.95rem;font-weight:600;margin-bottom:12px;color:var(--text)}
+    .modal-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+    .modal-list button{padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font:0.85rem var(--sans);cursor:pointer;text-align:left}
+    .modal-list button:active{border-color:var(--accent);background:rgba(108,92,231,0.1)}
+    .modal-cancel{width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--muted);font:0.8rem var(--sans);cursor:pointer}
+
+    .fullscreen-exit{display:none;position:fixed;top:12px;right:12px;z-index:9001;background:rgba(0,0,0,0.5);border:0;color:#fff;width:44px;height:44px;border-radius:50%;font-size:1.3rem;cursor:pointer;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+
+    /* === FULLSCREEN MODE === */
+    body.fullscreen-mode .layout{position:fixed;inset:0;z-index:9000;grid-template-columns:1fr;grid-template-rows:1fr}
+    body.fullscreen-mode .header,body.fullscreen-mode .input-bar,body.fullscreen-mode .sidebar{display:none!important}
+    body.fullscreen-mode .player-bar{display:none!important}
+    body.fullscreen-mode .player-wrap{position:fixed!important;inset:0!important;z-index:9000!important}
+    body.fullscreen-mode .player-wrap video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+    body.fullscreen-mode .player-empty{position:absolute;inset:0}
+    body.fullscreen-mode .fullscreen-exit{display:flex}
+    body.fullscreen-mode .mobile-nav{display:none!important}
+
+    /* === MOBILE: JS-toggled via body.mobile === */
+    body.mobile .layout{grid-template-columns:1fr;grid-template-rows:1fr;height:100dvh;height:100vh}
+    body.mobile .header{display:none}
+    body.mobile .input-bar{display:none}
+    body.mobile .player-bar{position:fixed;bottom:52px;left:0;right:0;z-index:350;background:linear-gradient(transparent,rgba(0,0,0,0.8));border:none;padding:8px 16px;opacity:0;transition:opacity 0.3s}
+    body.mobile .player-bar.show-bar{opacity:1}
+    body.mobile .player-bar .export-btns{display:none}
+    body.mobile .player-bar .player-controls{border-left:1px solid rgba(255,255,255,0.15)}
+    body.mobile .player-bar .player-controls button{color:rgba(255,255,255,0.7)}
+    body.mobile .player-bar .player-controls button.active{color:var(--accent2)}
+    body.mobile .sidebar{display:none}
+
+    body.mobile .player-wrap{position:fixed;inset:0;z-index:100;background:#000}
+    body.mobile .player-wrap video{width:100%;height:100%;object-fit:cover}
+
+    body.mobile .mobile-nav{display:flex;z-index:500}
+    body.mobile .mobile-panel-wrap{display:block;opacity:0;pointer-events:none}
+    body.mobile .mobile-panel-wrap.open{opacity:1;pointer-events:auto}
+    body.mobile .mobile-panel-wrap.open .mobile-panel{transform:translateY(0)}
+
+    body.mobile .fullscreen-exit{width:36px;height:36px;font-size:1.1rem;z-index:600}
+
+    .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:400;background:var(--surface);border-top:1px solid var(--border);padding:4px 0 calc(4px + var(--safe-b));height:52px;flex-direction:row;align-items:center}
+    .mobile-nav button{flex:1;padding:2px 0;border:0;background:transparent;color:var(--muted);font:600 0.65rem var(--sans);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+    .mobile-nav button.active{color:var(--accent)}
+    .mobile-nav button svg{width:20px;height:20px;flex-shrink:0}
+
+    .mobile-panel-wrap{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:550;background:rgba(0,0,0,0.4);opacity:0;pointer-events:none;transition:opacity 0.2s}
+    .mobile-panel-wrap.open{opacity:1;pointer-events:auto}
+    .mobile-panel{position:absolute;bottom:0;left:0;right:0;top:15%;background:var(--surface);border-radius:16px 16px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform 0.25s ease;overflow:hidden}
+    .mobile-panel .mp-handle{padding:10px 0 4px;text-align:center;cursor:pointer;flex-shrink:0}
+    .mobile-panel .mp-handle div{width:36px;height:4px;border-radius:2px;background:var(--border);margin:0 auto}
+    .mobile-panel .sidebar-tabs{border-bottom:1px solid var(--border);flex-shrink:0}
+    .mobile-panel .sidebar-tabs button{padding:12px 0;font-size:0.82rem}
+    .mobile-panel .tab-panel{min-height:0}
+    .mobile-panel .sidebar-list{padding-bottom:var(--safe-b)}
   </style>
 </head>
 <body>
-  <div>
-    <div class="spinner"></div>
-    <div class="loading">Loading XionLive...</div>
+  <div class="layout" id="app-layout">
+    <div class="header">
+      <h1>XionLive Brugge</h1>
+      <span class="status" id="server-status">checking...</span>
+    </div>
+
+    <div class="main">
+      <div class="input-bar">
+        <div class="input-row">
+          <input id="url-input" type="text" spellcheck="false" placeholder="Paste m3u8 URL or FCTV33 match page URL...">
+          <button id="play-btn" onclick="handlePlay()">Play</button>
+        </div>
+        <div class="input-modes">
+          <button class="active" onclick="setMode('auto',this)">Auto</button>
+          <button onclick="setMode('m3u8',this)">Direct m3u8</button>
+          <button onclick="setMode('match',this)">Match Page</button>
+        </div>
+        <div class="error-msg" id="error-msg"></div>
+      </div>
+
+      <div class="player-wrap" id="player-wrap">
+        <div class="player-empty" id="player-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 5v14l11-7z"/></svg>
+          <p>Paste a URL, or pick a live match</p>
+        </div>
+        <video id="video" controls playsinline webkit-playsinline style="display:none"></video>
+        <iframe id="webview-frame" allowfullscreen="true" allow="autoplay; fullscreen; media-capture" style="display:none;position:absolute;inset:0;width:100%;height:100%;border:none;z-index:100;background:#000"></iframe>
+        <button id="webview-close" onclick="closeWebview()" style="display:none;position:absolute;top:8px;right:8px;z-index:200;background:rgba(0,0,0,0.7);color:#fff;border:1px solid #555;padding:6px 14px;border-radius:6px;font:600 12px system-ui;cursor:pointer">&#x2715; Back to app</button>
+        <button class="fullscreen-exit" id="fs-exit-btn" onclick="exitFullscreen()">&#x2715;</button>
+      </div>
+
+      <div class="player-bar" id="player-bar" style="display:none">
+        <div class="live-dot"></div>
+        <span class="stream-info" id="stream-info">Live</span>
+        <div class="export-btns">
+          <button onclick="copyExport('direct')">Direct URL</button>
+          <button onclick="copyExport('proxy')">Proxy URL</button>
+          <button onclick="copyExport('vlc')">VLC</button>
+          <button onclick="copyExport('mpv')">mpv</button>
+        </div>
+        <div class="player-controls">
+          <button id="airplay-btn" onclick="startAirPlay()" title="AirPlay" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M5 17H4a2 2 0 01-2-2V5a2 2 0 012-2h16a2 2 0 012 2v10a2 2 0 01-2 2h-1"/><polygon points="12 15 17 21 7 21 12 15"/></svg>
+          </button>
+          <button id="cast-btn" title="Cast" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M2 16.1A5 5 0 015.9 20M2 12.05A9 9 0 019.95 20M2 8V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2h-6"/><circle cx="2" cy="20" r="1" fill="currentColor"/></svg>
+          </button>
+          <button onclick="enterFullscreen()" title="Fullscreen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar" id="sidebar-desktop">
+      <div class="sidebar-tabs">
+        <button class="active" onclick="switchTab('matches',this)">Live Matches</button>
+        <button onclick="switchTab('history',this)">History</button>
+      </div>
+      <div class="tab-panel active" id="tab-matches">
+        <div class="sidebar-header">
+          <span id="match-count">Loading...</span>
+          <div style="display:flex;gap:4px">
+            <button onclick="clearPlayed()" style="font-size:0.65rem">Clear played</button>
+            <button onclick="loadMatches()">Refresh</button>
+          </div>
+        </div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--border)">
+          <input id="match-search" type="text" placeholder="Search matches..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font:0.82rem var(--sans);outline:none">
+        </div>
+        <div class="sidebar-list" id="matches-list"><div class="sidebar-empty">Loading...</div></div>
+      </div>
+      <div class="tab-panel" id="tab-history">
+        <div class="sidebar-header"><span>Saved Streams</span><button onclick="clearHistory()">Clear</button></div>
+        <div class="sidebar-list" id="history-list"><div class="sidebar-empty">No saved streams</div></div>
+      </div>
+    </div>
   </div>
+
+  <!-- Mobile bottom nav -->
+  <div class="mobile-nav" id="mobile-nav">
+    <button id="nav-matches" onclick="openMobilePanel('matches')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg>
+      Matches
+    </button>
+    <button id="nav-url" onclick="promptUrl()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      URL
+    </button>
+    <button id="nav-history" onclick="openMobilePanel('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+      History
+    </button>
+    <button id="nav-fs" onclick="enterFullscreen()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+      Full
+    </button>
+  </div>
+
+  <!-- Mobile slide-up panel -->
+  <div class="mobile-panel-wrap" id="mobile-panel-wrap">
+    <div class="mobile-panel" id="mobile-panel">
+      <div class="mp-handle" onclick="closeMobilePanel()"><div></div></div>
+      <div class="sidebar-tabs">
+        <button class="active" id="m-tab-btn-matches" onclick="switchMobileTab('matches')">Live Matches</button>
+        <button id="m-tab-btn-history" onclick="switchMobileTab('history')">History</button>
+      </div>
+      <div class="tab-panel active" id="m-tab-matches">
+        <div class="sidebar-header">
+          <span id="m-match-count">Loading...</span>
+          <button onclick="loadMatches()" style="font-size:0.65rem">Refresh</button>
+        </div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--border)">
+          <input id="m-match-search" type="text" placeholder="Search matches..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font:0.82rem var(--sans);outline:none">
+        </div>
+        <div class="sidebar-list" id="m-matches-list"><div class="sidebar-empty">Loading...</div></div>
+      </div>
+      <div class="tab-panel" id="m-tab-history">
+        <div class="sidebar-header"><span>Saved Streams</span><button onclick="clearHistory()">Clear</button></div>
+        <div class="sidebar-list" id="m-history-list"><div class="sidebar-empty">No saved streams</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="modal-overlay" id="stream-picker" style="display:none">
+    <div class="modal-box">
+      <div class="modal-title">Choose stream source</div>
+      <div class="modal-list" id="stream-picker-list"></div>
+      <button class="modal-cancel" onclick="closeStreamPicker()">Cancel</button>
+    </div>
+  </div>
+
+  <script>
+    var isMobile = false;
+    function detectMobile() {
+      var touch = navigator.maxTouchPoints > 0;
+      var narrow = window.innerWidth <= 1024;
+      return touch && narrow;
+    }
+    function applyMobile() {
+      var m = detectMobile();
+      if (m !== isMobile) {
+        isMobile = m;
+        document.body.classList.toggle('mobile', m);
+        if (!m) closeMobilePanel();
+      }
+    }
+    applyMobile();
+    window.addEventListener('resize', applyMobile);
+
+    var hls = null, mode = 'auto', currentData = null;
+    var streamHistory = [];
+    try { var r = localStorage.getItem('xion_history'); if (r) { var p = JSON.parse(r); if (Array.isArray(p)) streamHistory = p.filter(function(h){return h&&h.name}); } } catch(e){}
+    var matchData = [], resolvingMatchId = null;
+    var playedIds = [];
+    try { var r2 = localStorage.getItem('xion_played'); if (r2) playedIds = JSON.parse(r2)||[]; } catch(e){}
+
+    var video = document.getElementById('video');
+    var urlInput = document.getElementById('url-input');
+    var playBtn = document.getElementById('play-btn');
+    var errorMsg = document.getElementById('error-msg');
+    var playerEmpty = document.getElementById('player-empty');
+    var playerBar = document.getElementById('player-bar');
+    var streamInfo = document.getElementById('stream-info');
+    var panelWrap = document.getElementById('mobile-panel-wrap');
+    var isPanelOpen = false;
+
+    function switchTab(tab, btn) {
+      document.querySelectorAll('#sidebar-desktop .sidebar-tabs button').forEach(function(b){b.classList.remove('active')});
+      if (btn) btn.classList.add('active');
+      document.getElementById('tab-matches').classList.toggle('active', tab==='matches');
+      document.getElementById('tab-history').classList.toggle('active', tab==='history');
+    }
+
+    function switchMobileTab(tab) {
+      document.querySelectorAll('.mobile-panel .sidebar-tabs button').forEach(function(b){b.classList.remove('active')});
+      document.getElementById('m-tab-btn-'+tab).classList.add('active');
+      document.getElementById('m-tab-matches').classList.toggle('active', tab==='matches');
+      document.getElementById('m-tab-history').classList.toggle('active', tab==='history');
+      if (tab==='matches') renderMobileMatches();
+      if (tab==='history') renderMobileHistory();
+    }
+
+    function openMobilePanel(tab) {
+      if (tab==='url') { promptUrl(); return; }
+      if (isPanelOpen && ((tab==='matches' && document.getElementById('m-tab-matches').classList.contains('active')) || (tab==='history' && document.getElementById('m-tab-history').classList.contains('active')))) {
+        closeMobilePanel(); return;
+      }
+      if (tab==='history') switchMobileTab('history');
+      else switchMobileTab('matches');
+      panelWrap.classList.add('open');
+      isPanelOpen = true;
+    }
+
+    function closeMobilePanel() {
+      panelWrap.classList.remove('open');
+      isPanelOpen = false;
+    }
+
+    panelWrap.addEventListener('click', function(e) {
+      if (e.target === panelWrap) closeMobilePanel();
+    });
+
+    function promptUrl() {
+      var u = prompt('Paste URL:');
+      if (u && u.trim()) { urlInput.value = u.trim(); handlePlay(); }
+    }
+
+    function setMode(m, btn) {
+      mode = m;
+      document.querySelectorAll('.input-modes button').forEach(function(b){b.classList.remove('active')});
+      if (btn) btn.classList.add('active');
+    }
+
+    function showError(msg) { errorMsg.textContent=msg; errorMsg.classList.add('show'); if(isMobile){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show')},4000)} }
+    function hideError() { errorMsg.classList.remove('show'); }
+    function showToast(msg) { var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(function(){t.classList.remove('show')},1500); }
+
+    function isM3u8(url) { return /\.m3u8(\?|$)/i.test(url); }
+    function isMatchPage(url) { return /fctv33|rbtv|superabbit|madplay|hubu\.ru|mpgreatestclgczbmiddle|tm3troops31patrol|tcdru136ovur|2wc4tool8utphnumber|8l3duspoken587uclock|tn76degree12ec3out|fut0newsiryroquite/i.test(url) && /\.html/i.test(url); }
+
+    function handlePlay() {
+      var url = urlInput.value.trim();
+      if (!url) return;
+      hideError(); playBtn.disabled=true; playBtn.textContent='Resolving...'; closeMobilePanel();
+      var defaultReferer = 'https://jack27eo.mpgreatestclgczbmiddle.my/';
+      if (mode==='m3u8'||(mode==='auto'&&isM3u8(url))) {
+        var sn=url.split('/').pop().split('?')[0]||'stream';
+        var proxyUrl='xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
+        currentData={playableUrl:proxyUrl,directUrl:url,referer:defaultReferer,name:sn,inputUrl:url};
+        addToHistory(sn,url,proxyUrl); startPlayback(proxyUrl,sn); playBtn.disabled=false; playBtn.textContent='Play';
+      } else if (mode==='match'||(mode==='auto'&&isMatchPage(url))) {
+        window.resolveXionMatch(url)
+        .then(function(d){
+          currentData={playableUrl:d.playableUrl,directUrl:d.streamUrl||url,referer:d.referer||defaultReferer,name:d.name||'Match',inputUrl:url};
+          addToHistory(d.name||'Match',url,d.playableUrl);startPlayback(d.playableUrl,d.name||'Match')
+        })
+        .catch(function(e){showError(e.message||'Failed')}).finally(function(){playBtn.disabled=false;playBtn.textContent='Play'});
+      } else {
+        var sn=url.split('/').pop().split('?')[0]||'stream';
+        var proxyUrl='xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
+        currentData={playableUrl:proxyUrl,directUrl:url,referer:defaultReferer,name:sn,inputUrl:url};
+        addToHistory(sn,url,proxyUrl); startPlayback(proxyUrl,sn); playBtn.disabled=false; playBtn.textContent='Play';
+      }
+    }
+
+    function playMatch(idx) {
+      var match=matchData[idx]; if(!match||resolvingMatchId) return;
+      resolvingMatchId=match.matchId; hideError(); renderMatches(); renderMobileMatches(); closeMobilePanel();
+      video.style.display='block';playerEmpty.style.display='none';playerBar.style.display='flex';streamInfo.textContent='Resolving '+match.name+'...';
+      console.log('[xion] playMatch resolving:', match.url);
+      window.resolveXionMatch(match.url)
+      .then(function(d){
+        console.log('[xion] playMatch resolved:', JSON.stringify(d));
+        if(d.streams&&d.streams.length){
+          if(d.streams.length===1)resolveAndPlay(match,d.streams[0].streamId,d);
+          else showStreamPicker(d.streams,match,d);
+        } else if(d.playableUrl){
+          resolveAndPlayDirect(d,match)
+        } else {
+          throw new Error('No streams found');
+        }
+      })
+      .catch(function(e){
+        console.error('[xion] playMatch error:', e.message||e);
+        var msg=e.message||'Failed to resolve stream';
+        if(msg.indexOf('No HLS')!==-1||msg.indexOf('RTMP')!==-1){
+          console.log('[xion] RTMP-only match, opening in browser:', match.url);
+          resolvingMatchId=null;renderMatches();renderMobileMatches();
+          openWebview(match.url);
+        } else {
+          showError(msg);
+          resolvingMatchId=null;renderMatches();renderMobileMatches();
+        }
+      });
+    }
+
+    function resolveAndPlay(match,streamId,listData) {
+      window.resolveXionMatch(match.url, streamId)
+      .then(function(d){currentData={playableUrl:d.playableUrl,directUrl:d.streamUrl||match.url,referer:d.referer||'',name:d.name||match.name,inputUrl:match.url};addToHistory(d.name||match.name,match.url,d.playableUrl);markPlayed(match.matchId);startPlayback(d.playableUrl,d.name||match.name);urlInput.value=match.url})
+      .catch(function(e){showError(e.message||'Failed')}).finally(function(){resolvingMatchId=null;renderMatches();renderMobileMatches()});
+    }
+
+    function resolveAndPlayDirect(d,match) {
+      currentData={playableUrl:d.playableUrl,directUrl:d.streamUrl||match.url,referer:d.referer||'',name:d.name||match.name,inputUrl:match.url};
+      addToHistory(d.name||match.name,match.url,d.playableUrl);markPlayed(match.matchId);startPlayback(d.playableUrl,d.name||match.name);urlInput.value=match.url;
+      resolvingMatchId=null;renderMatches();renderMobileMatches();
+    }
+
+    function markPlayed(mid){if(playedIds.indexOf(mid)===-1){playedIds.push(mid);try{localStorage.setItem('xion_played',JSON.stringify(playedIds))}catch(e){}}}
+    function clearPlayed(){playedIds=[];try{localStorage.removeItem('xion_played')}catch(e){}renderMatches();renderMobileMatches()}
+
+    function showStreamPicker(streams,match,listData) {
+      var picker=document.getElementById('stream-picker');var list=document.getElementById('stream-picker-list');list.innerHTML='';
+      streams.forEach(function(s){var btn=document.createElement('button');btn.textContent=s.name||('Stream '+s.streamId);btn.onclick=function(){closeStreamPicker();resolvingMatchId=match.matchId;renderMatches();renderMobileMatches();resolveAndPlay(match,s.streamId,listData)};list.appendChild(btn)});
+      picker.style.display='flex';
+    }
+    function closeStreamPicker(){document.getElementById('stream-picker').style.display='none'}
+
+     function startPlayback(url,name) {
+      if(hls){hls.destroy();hls=null}
+      video.style.display='block';playerEmpty.style.display='none';playerBar.style.display='flex';streamInfo.textContent=name;
+      console.log('[xion] startPlayback url:', url.substring(0,120));
+      if(Hls.isSupported()){
+        hls=new Hls({
+          enableWorker:true,lowLatencyMode:true,backBufferLength:30,maxBufferLength:60,maxMaxBufferLength:120,
+          startFragPrefetch:true,liveSyncDurationCount:4,liveMaxLatencyDurationCount:8,liveDurationInfinity:true,
+          highBufferWatchdogPeriod:2,overrideNative:true
+        });
+        hls.loadSource(url);hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED,function(){console.log('[xion] HLS manifest parsed');video.play().catch(function(e){console.warn('[xion] autoplay blocked:',e.message)});if(castSession&&currentData)castCurrentMedia()});
+        hls.on(Hls.Events.ERROR,function(_,d){console.error('[xion] HLS error:',d.type,d.details,d.fatal);if(d.fatal){if(d.type===Hls.ErrorTypes.NETWORK_ERROR){showError('Network error: '+d.details);hls.startLoad()}else showError('Playback error: '+d.details)}});
+      } else {
+        console.log('[xion] native player url:', url.substring(0,120));
+        video.onloadeddata = function(){ console.log('[xion] video loaded'); video.play().catch(function(e){console.warn('[xion] native play failed:',e.message);showError('Play failed: '+e.message)});if(castSession&&currentData)castCurrentMedia()};
+        video.onerror = function(){
+          var err=video.error;
+          var code=err?err.code:0;
+          var msg='Error '+code+': '+(err?err.message:'unknown');
+          console.error('[xion]',msg,'url:',url);
+          fetch(url).then(function(r){
+            return r.text().then(function(t){
+              var info='Video: '+msg;
+              info+='\n\nURL: '+url.substring(0,200);
+              info+='\nHTTP: '+r.status;
+              info+='\nContent-Type: '+(r.headers.get('content-type')||'?');
+              info+='\nSize: '+t.length+' bytes';
+              if(t.length<1500) info+='\n\n'+t;
+              else info+='\n\n'+t.substring(0,600)+'...';
+              showError(info);
+            });
+          }).catch(function(e){
+            showError(msg+'\n\nURL: '+url.substring(0,200)+'\nFetch error: '+e.message);
+          });
+        };
+        video.src = url;
+      }
+    }
+
+    function openWebview(url) {
+      window.open(url,'_blank');
+      playerBar.style.display='flex'; streamInfo.textContent='Opening in browser...';
+      resolvingMatchId=null;renderMatches();renderMobileMatches();
+    }
+    function closeWebview() {
+      var iframe = document.getElementById('webview-frame');
+      var closeBtn = document.getElementById('webview-close');
+      iframe.style.display = 'none'; iframe.src = '';
+      closeBtn.style.display = 'none';
+      playerEmpty.style.display='flex'; playerBar.style.display='none';
+    }
+
+    function handleStop(){if(hls){hls.destroy();hls=null}video.src='';video.style.display='none';closeWebview();playerEmpty.style.display='flex';playerBar.style.display='none';currentData=null}
+
+    function enterFullscreen() {
+      closeMobilePanel();
+      document.body.classList.add('fullscreen-mode');
+      if(screen.orientation&&screen.orientation.lock)screen.orientation.lock('landscape').catch(function(){});
+      if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(function(){});
+    }
+    function exitFullscreen() {
+      document.body.classList.remove('fullscreen-mode');
+      if(screen.orientation&&screen.orientation.unlock)screen.orientation.unlock();
+      if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(function(){});
+    }
+    document.addEventListener('fullscreenchange',function(){if(!document.fullscreenElement)document.body.classList.remove('fullscreen-mode')});
+
+    function copyExport(type) {
+      if(!currentData)return;var t='';
+      if(type==='direct')t=currentData.directUrl;
+      else if(type==='proxy')t=currentData.playableUrl;
+      else if(type==='vlc')t='vlc "'+currentData.directUrl+'" --http-referrer="'+currentData.referer+'"';
+      else if(type==='mpv')t='mpv "'+currentData.directUrl+'" --referrer="'+currentData.referer+'"';
+      navigator.clipboard.writeText(t).then(function(){showToast('Copied!')});
+    }
+
+    var API_HOSTS = [
+      'https://apis-data10.tcdru136ovur.ru',
+      'https://apis-data8.tcdru136ovur.ru',
+      'https://apis-data11.tcdru136ovur.ru'
+    ];
+    var SPORT_TYPES = [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 90];
+    var API_HEADERS = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+      'Referer': 'https://jack27eo.mpgreatestclgczbmiddle.my/',
+      'Origin': 'https://jack27eo.mpgreatestclgczbmiddle.my'
+    };
+
+    function loadMatches() {
+      var count = document.getElementById('match-count');
+      var mcount = document.getElementById('m-match-count');
+      count.textContent = 'Loading...';
+      mcount.textContent = 'Loading...';
+      console.log('[xion] loadMatches: fetching directly from API');
+
+      var workingHost = null;
+      var allMatches = [];
+      var completed = 0;
+      var total = 0;
+
+      function tryHost(hostIdx, sportIdx) {
+        if (hostIdx >= API_HOSTS.length) {
+          finishLoad();
+          return;
+        }
+        var host = API_HOSTS[hostIdx];
+        var sport = SPORT_TYPES[sportIdx];
+        var url = host + '/api/match/live?sportType=' + sport;
+        console.log('[xion] fetching ' + url);
+
+        var controller = new AbortController();
+        var timeout = setTimeout(function() { controller.abort(); }, 5000);
+
+        fetch('xion://proxy?url=' + encodeURIComponent(url) + '&referer=' + encodeURIComponent(API_HEADERS.Referer) + '&origin=' + encodeURIComponent(API_HEADERS.Origin), { signal: controller.signal })
+          .then(function(r) {
+            clearTimeout(timeout);
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+          })
+          .then(function(buf) {
+            var matches = window.parseMatchesFromBuffer(buf, sport);
+            console.log('[xion] host=' + hostIdx + ' sport=' + sport + ' got ' + matches.length + ' matches');
+            if (!workingHost) workingHost = host;
+            for (var i = 0; i < matches.length; i++) {
+              allMatches.push(matches[i]);
+            }
+            completed++;
+            nextSportOrHost();
+          })
+          .catch(function(e) {
+            clearTimeout(timeout);
+            console.warn('[xion] fetch failed host=' + hostIdx + ' sport=' + sport + ': ' + e.message);
+            if (sportIdx === 0) {
+              tryHost(hostIdx + 1, 0);
+            } else {
+              nextSportOrHost();
+            }
+          });
+      }
+
+      function nextSportOrHost() {
+        var nextIdx = completed;
+        if (nextIdx >= SPORT_TYPES.length) {
+          finishLoad();
+          return;
+        }
+        tryHost(workingHost ? API_HOSTS.indexOf(workingHost) : 0, nextIdx);
+      }
+
+      function finishLoad() {
+        var nids = {};
+        for (var i = 0; i < allMatches.length; i++) nids[allMatches[i].matchId] = true;
+        var merged = [];
+        for (var i = 0; i < matchData.length; i++) {
+          if (nids[matchData[i].matchId]) merged.push(matchData[i]);
+        }
+        for (var i = 0; i < allMatches.length; i++) {
+          var ex = false;
+          for (var j = 0; j < merged.length; j++) {
+            if (merged[j].matchId === allMatches[i].matchId) { ex = true; break; }
+          }
+          if (!ex) merged.push(allMatches[i]);
+        }
+        matchData = merged;
+        var txt = matchData.length + ' live match' + (matchData.length !== 1 ? 'es' : '');
+        count.textContent = txt;
+        mcount.textContent = txt;
+        renderMatches();
+        renderMobileMatches();
+      }
+
+      total = SPORT_TYPES.length;
+      tryHost(0, 0);
+    }
+
+    function buildMatchesHtml(filter) {
+      var sv=(filter||'').toLowerCase().trim();
+      var filtered=sv?matchData.filter(function(m){return(m.name||'').toLowerCase().indexOf(sv)!==-1||(m.league||'').toLowerCase().indexOf(sv)!==-1||(m.home||'').toLowerCase().indexOf(sv)!==-1||(m.away||'').toLowerCase().indexOf(sv)!==-1||(m.sport||'').toLowerCase().indexOf(sv)!==-1}):matchData;
+      if(!filtered.length)return '<div class="sidebar-empty">'+(sv?'No matches found':'No live matches')+'</div>';
+      var groups={},order=[];
+      for(var i=0;i<filtered.length;i++){var m=filtered[i];var k=m.league||m.sport||'Other';if(!groups[k]){groups[k]=[];order.push(k)}groups[k].push(m)}
+      order.sort(function(a,b){
+        function lp(l){
+          l=l.toLowerCase();
+          if(l.indexOf('jupiler')!==-1||l.indexOf('belgian')!==-1||l.indexOf('pro league')!==-1)return 1;
+          if(l.indexOf('primera')!==-1||l.indexOf('la liga')!==-1||l.indexOf('spain')!==-1)return 2;
+          if(l.indexOf('champion')!==-1&&l.indexOf('league')!==-1)return 3;
+          if(l.indexOf('europa')!==-1&&l.indexOf('league')!==-1)return 4;
+          if(l.indexOf('conference')!==-1&&l.indexOf('league')!==-1)return 4;
+          if(l.indexOf('premier')!==-1)return 5;
+          if(l.indexOf('ligue 1')!==-1)return 6;
+          if(l.indexOf('serie a')!==-1&&l.indexOf('serie c')===-1)return 7;
+          if(l.indexOf('bundesliga')!==-1)return 8;
+          if(l.indexOf('eredivisie')!==-1)return 9;
+          if(l.indexOf('ligue 2')!==-1)return 10;
+          if(l.indexOf('serie b')!==-1)return 11;
+          if(l.indexOf('nfl')!==-1)return 12;
+          if(l.indexOf('mlb')!==-1)return 13;
+          return 20;
+        }
+        var pa=lp(a),pb=lp(b);
+        if(pa!==pb)return pa-pb;
+        return a.localeCompare(b);
+      });
+      var html='';
+      for(var oi=0;oi<order.length;oi++){
+        html+='<div style="padding:6px 16px;font-size:0.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--border)">'+esc(order[oi])+'</div>';
+        var lm=groups[order[oi]];
+        for(var j=0;j<lm.length;j++){
+          var mm=lm[j],idx=matchData.indexOf(mm),ir=resolvingMatchId===mm.matchId,ip=playedIds.indexOf(mm.matchId)!==-1;
+          if(ip && !ir) continue;
+          var cls='match-item'+(ir?' resolving':'');
+          var sc=(mm.sport||'others').toLowerCase().replace(/[^a-z]/g,'');
+          html+='<div class="'+cls+'" data-match-idx="'+idx+'"><div class="teams">'+esc(mm.home||'?')+' vs '+esc(mm.away||'?')+'</div><span class="sport-badge '+sc+'">'+esc(mm.sport||'live')+'</span></div>';
+        }
+      }
+      return html;
+    }
+
+    function renderMatches(){document.getElementById('matches-list').innerHTML=buildMatchesHtml(document.getElementById('match-search').value)}
+    function renderMobileMatches(){var el=document.getElementById('m-match-search');document.getElementById('m-matches-list').innerHTML=buildMatchesHtml(el?el.value:'')}
+
+    document.getElementById('match-search').addEventListener('input',renderMatches);
+    var ms=document.getElementById('m-match-search');if(ms)ms.addEventListener('input',renderMobileMatches);
+    document.getElementById('matches-list').addEventListener('click',function(e){var item=e.target.closest('.match-item');if(item)playMatch(parseInt(item.getAttribute('data-match-idx'),10))});
+    document.getElementById('m-matches-list').addEventListener('click',function(e){var item=e.target.closest('.match-item');if(item)playMatch(parseInt(item.getAttribute('data-match-idx'),10))});
+
+    function addToHistory(name,inputUrl,playableUrl) {
+      var item={name:name,inputUrl:inputUrl,playableUrl:playableUrl,time:Date.now()};
+      streamHistory=streamHistory.filter(function(h){return h.inputUrl!==inputUrl});
+      streamHistory.unshift(item);if(streamHistory.length>30)streamHistory=streamHistory.slice(0,30);
+      localStorage.setItem('xion_history',JSON.stringify(streamHistory));
+      renderHistory();renderMobileHistory();
+    }
+    function renderHistory(){
+      var list=document.getElementById('history-list');
+      if(!streamHistory.length){list.innerHTML='<div class="sidebar-empty">No saved streams</div>';return}
+      var html='';for(var i=0;i<streamHistory.length;i++){var h=streamHistory[i];if(!h||!h.name)continue;
+        html+='<div class="sidebar-item" data-hist-idx="'+i+'"><button class="remove" data-remove-hist="'+i+'">x</button><div class="name">'+esc(h.name)+'</div><div class="meta">'+timeAgo(h.time)+'</div></div>';}
+      list.innerHTML=html;
+    }
+    function renderMobileHistory(){
+      var list=document.getElementById('m-history-list');
+      if(!streamHistory.length){list.innerHTML='<div class="sidebar-empty">No saved streams</div>';return}
+      var html='';for(var i=0;i<streamHistory.length;i++){var h=streamHistory[i];if(!h||!h.name)continue;
+        html+='<div class="sidebar-item" data-mhist-idx="'+i+'"><button class="remove" data-mremove-hist="'+i+'">x</button><div class="name">'+esc(h.name)+'</div><div class="meta">'+timeAgo(h.time)+'</div></div>';}
+      list.innerHTML=html;
+    }
+
+    document.getElementById('history-list').addEventListener('click',function(e){
+      var rb=e.target.closest('[data-remove-hist]');if(rb){e.stopPropagation();streamHistory.splice(parseInt(rb.getAttribute('data-remove-hist'),10),1);localStorage.setItem('xion_history',JSON.stringify(streamHistory));renderHistory();renderMobileHistory();return}
+      var item=e.target.closest('.sidebar-item');if(item){var h=streamHistory[parseInt(item.getAttribute('data-hist-idx'),10)];if(h){urlInput.value=h.inputUrl;currentData=h;startPlayback(h.playableUrl,h.name)}}
+    });
+    document.getElementById('m-history-list').addEventListener('click',function(e){
+      var rb=e.target.closest('[data-mremove-hist]');if(rb){e.stopPropagation();streamHistory.splice(parseInt(rb.getAttribute('data-mremove-hist'),10),1);localStorage.setItem('xion_history',JSON.stringify(streamHistory));renderHistory();renderMobileHistory();return}
+      var item=e.target.closest('.sidebar-item');if(item){var h=streamHistory[parseInt(item.getAttribute('data-mhist-idx'),10)];if(h){urlInput.value=h.inputUrl;currentData=h;startPlayback(h.playableUrl,h.name);closeMobilePanel()}}
+    });
+
+    function clearHistory(){streamHistory=[];localStorage.removeItem('xion_history');renderHistory();renderMobileHistory()}
+    function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+    function timeAgo(t){var s=Math.floor((Date.now()-t)/1000);if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'}
+
+    urlInput.addEventListener('keydown',function(e){if(e.key==='Enter')handlePlay()});
+
+    (function checkServer(){
+      var el = document.getElementById('server-status');
+      el.textContent='Checking API...';
+      var url = API_HOSTS[0] + '/api/match/live?sportType=1';
+      var controller = new AbortController();
+      var timeout = setTimeout(function() { controller.abort(); }, 5000);
+      fetch('xion://proxy?url=' + encodeURIComponent(url) + '&referer=' + encodeURIComponent(API_HEADERS.Referer) + '&origin=' + encodeURIComponent(API_HEADERS.Origin), { signal: controller.signal })
+        .then(function(r) {
+          clearTimeout(timeout);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer();
+        })
+        .then(function(buf) {
+          var matches = window.parseMatchesFromBuffer(buf, 1);
+          el.textContent='API OK (' + matches.length + ' football)';
+          el.classList.add('on');
+        })
+        .catch(function(e) {
+          console.error('[xion] API check failed:', e.message);
+          el.textContent='API offline: '+e.message;
+        });
+    })();
+
+    renderHistory();renderMobileHistory();loadMatches();setInterval(loadMatches,30000);
+
+    /* === MOBILE TOUCH GESTURES === */
+    (function() {
+      var v = document.getElementById('video');
+      var bar = document.getElementById('player-bar');
+      var barTimer = null;
+      var lastTap = 0;
+      var startDist = 0, startScale = 1, curScale = 1;
+      var dragX = 0, dragY = 0, dragging = false;
+      var startDragX = 0, startDragY = 0;
+      var baseTransform = '';
+
+      function dist(a, b) {
+        var dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+      }
+
+      function showBar() {
+        bar.classList.add('show-bar');
+        clearTimeout(barTimer);
+        barTimer = setTimeout(function() { bar.classList.remove('show-bar'); }, 3000);
+      }
+      showBar();
+
+      v.addEventListener('click', function(e) {
+        if (!isMobile) return;
+        var now = Date.now();
+        if (now - lastTap < 300) {
+          var rect = v.getBoundingClientRect();
+          var x = e.clientX - rect.left;
+          if (x < rect.width / 3) {
+            v.currentTime = Math.max(0, v.currentTime - 10);
+            showSkipIndicator(e.clientX, e.clientY, '-10s');
+          } else if (x > rect.width * 2 / 3) {
+            v.currentTime = Math.min(v.duration || 0, v.currentTime + 10);
+            showSkipIndicator(e.clientX, e.clientY, '+10s');
+          } else {
+            if (v.paused) { v.play(); } else { v.pause(); }
+          }
+          lastTap = 0;
+        } else {
+          lastTap = now;
+          showBar();
+        }
+      });
+
+      function showSkipIndicator(x, y, text) {
+        var el = document.createElement('div');
+        el.textContent = text;
+        el.style.cssText = 'position:fixed;left:'+x+'px;top:'+y+'px;transform:translate(-50%,-50%);color:#fff;font-size:1.2rem;font-weight:700;pointer-events:none;z-index:9999;text-shadow:0 2px 8px rgba(0,0,0,0.8);transition:opacity 0.5s';
+        document.body.appendChild(el);
+        requestAnimationFrame(function() { el.style.opacity = '0'; });
+        setTimeout(function() { el.remove(); }, 600);
+      }
+
+      v.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          startDist = dist(e.touches[0], e.touches[1]);
+          startScale = curScale;
+        } else if (e.touches.length === 1) {
+          dragging = true;
+          startDragX = e.touches[0].clientX;
+          startDragY = e.touches[0].clientY;
+        }
+      }, { passive: false });
+
+      v.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          var d = dist(e.touches[0], e.touches[1]);
+          curScale = Math.min(Math.max(startScale * (d / startDist), 1), 4);
+          applyTransform();
+        } else if (e.touches.length === 1 && dragging && curScale > 1) {
+          e.preventDefault();
+          var dx = e.touches[0].clientX - startDragX;
+          var dy = e.touches[0].clientY - startDragY;
+          dragX = Math.min(Math.max(dragX + dx, -(curScale - 1) * v.clientWidth / 2), (curScale - 1) * v.clientWidth / 2);
+          dragY = Math.min(Math.max(dragY + dy, -(curScale - 1) * v.clientHeight / 2), (curScale - 1) * v.clientHeight / 2);
+          startDragX = e.touches[0].clientX;
+          startDragY = e.touches[0].clientY;
+          applyTransform();
+        }
+      }, { passive: false });
+
+      v.addEventListener('touchend', function(e) {
+        if (e.touches.length < 2) {
+          dragging = false;
+        }
+        if (e.touches.length === 0 && curScale <= 1.05) {
+          curScale = 1; dragX = 0; dragY = 0;
+          v.style.transform = '';
+          v.style.objectFit = 'contain';
+        }
+      });
+
+      function applyTransform() {
+        v.style.transform = 'scale(' + curScale + ') translate(' + (dragX / curScale) + 'px,' + (dragY / curScale) + 'px)';
+        v.style.objectFit = curScale > 1.05 ? 'cover' : 'contain';
+      }
+    })();
+
+    /* === CHROMECAST === */
+    var castSession = null;
+    var castMedia = null;
+
+    function initCast() {
+      if (!window.chrome || !window.chrome.cast || !window.cast || !window.cast.framework) {
+        setTimeout(initCast, 500);
+        return;
+      }
+      try {
+        var castContext = cast.framework.CastContext.getInstance();
+        castContext.setOptions({
+          receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+          autoJoinPolicy: chrome.cast.AutoJoinPolicy.SCOPED_THIS_TAB_ONLY
+        });
+        castContext.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, function(e) {
+          if (e.sessionState === cast.framework.SessionState.SESSION_STARTED) {
+            castSession = castContext.getCurrentSession();
+            document.getElementById('cast-btn').classList.add('active');
+            console.log('[xion] cast session started');
+            if (currentData && currentData.playableUrl) castCurrentMedia();
+          } else if (e.sessionState === cast.framework.SessionState.SESSION_ENDED) {
+            castSession = null; castMedia = null;
+            document.getElementById('cast-btn').classList.remove('active');
+            console.log('[xion] cast session ended');
+          }
+        });
+        var castBtn = document.getElementById('cast-btn');
+        castBtn.style.display = '';
+        castBtn.onclick = function() {
+          if (castSession) {
+            castSession.endSession(true);
+          } else {
+            castContext.requestSession().catch(function(e) {
+              console.warn('[xion] cast request failed:', e.message);
+              showToast('No Chromecast devices found');
+            });
+          }
+        };
+        console.log('[xion] Cast SDK initialized');
+      } catch(e) {
+        console.warn('[xion] Cast init error:', e.message);
+        setTimeout(initCast, 2000);
+      }
+    }
+
+    setTimeout(initCast, 1500);
+
+    function castCurrentMedia() {
+      if (!castSession || !currentData) return;
+      var mediaUrl = currentData.playableUrl.startsWith('xion://') ? currentData.playableUrl : (window.location.origin + currentData.playableUrl);
+      var contentType = 'application/x-mpegURL';
+      if (!/\.m3u8/i.test(mediaUrl)) contentType = 'video/mp2t';
+      var mediaInfo = new cast.media.MediaInfo(mediaUrl, contentType);
+      mediaInfo.metadata = new cast.media.GenericMediaMetadata();
+      mediaInfo.metadata.title = currentData.name || 'XionLive';
+      if (currentData.referer) {
+        mediaInfo.customData = { headers: { Referer: currentData.referer } };
+      }
+      var request = new cast.media.LoadRequest(mediaInfo);
+      request.autoplay = true;
+      castSession.loadMedia(request).then(function(media) {
+        castMedia = media;
+        console.log('[xion] cast media loaded');
+      }).catch(function(e) { console.error('[xion] cast load error:', e.message); });
+    }
+
+    /* === AIRPLAY === */
+    (function() {
+      var v = document.getElementById('video');
+      var btn = document.getElementById('airplay-btn');
+      if (v.webkitShowPlaybackTargetPicker) {
+        btn.style.display = '';
+      } else if (window.MediaSource && /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)) {
+        btn.style.display = '';
+      }
+    })();
+
+    function startAirPlay() {
+      var v = document.getElementById('video');
+      if (v.webkitShowPlaybackTargetPicker) {
+        v.webkitShowPlaybackTargetPicker();
+      } else {
+        showToast('AirPlay not available on this browser');
+      }
+    }
+
+    /* === MOBILE: tap to show/hide player bar === */
+    (function() {
+      if (!('ontouchstart' in window)) return;
+      var v = document.getElementById('video');
+      var bar = document.getElementById('player-bar');
+      var controlsVisible = false;
+      var hideTimer = null;
+      v.addEventListener('click', function() {
+        if (isMobile && !controlsVisible) {
+          bar.classList.add('show-bar');
+          controlsVisible = true;
+          clearTimeout(hideTimer);
+          hideTimer = setTimeout(function() { bar.classList.remove('show-bar'); controlsVisible = false; }, 4000);
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
