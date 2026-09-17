@@ -23,6 +23,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .tv-player-controls button{padding:6px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color 0.15s}
 .tv-player-controls button:hover,.tv-player-controls button:focus{color:var(--text)}
 .tv-player-controls button.active{color:var(--accent)}
+.tv-iframe-back{position:absolute;top:12px;left:12px;z-index:200;background:rgba(0,0,0,0.7);color:#fff;border:1px solid rgba(255,255,255,0.2);padding:8px 16px;border-radius:8px;font:600 0.85rem var(--sans);cursor:pointer;display:flex;align-items:center;gap:6px;backdrop-filter:blur(4px);transition:background 0.15s}
+.tv-iframe-back:hover,.tv-iframe-back:focus{background:rgba(0,0,0,0.9)}
 
 /* === TV SIDEBAR === */
 .tv-sidebar{position:fixed;top:0;left:0;bottom:0;width:360px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:10}

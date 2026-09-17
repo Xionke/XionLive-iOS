@@ -28,19 +28,13 @@
     'primeira': 11, 'liga portugal': 11
   };
 
-  var hls = null;
   var matchData = [];
   var streamHistory = [];
-  var playedIds = [];
   var resolvingMatchId = null;
-  var currentData = null;
   var currentTab = 'live';
-  var selectedMatchIdx = -1;
 
   try { var r = localStorage.getItem('xion_history'); if (r) { var p = JSON.parse(r); if (Array.isArray(p)) streamHistory = p.filter(function(h){return h&&h.name}); } } catch(e){}
-  try { var r2 = localStorage.getItem('xion_played'); if (r2) playedIds = JSON.parse(r2)||[]; } catch(e){}
 
-  var video = document.getElementById('video');
   var matchList = document.getElementById('match-list');
   var playerEmpty = document.getElementById('player-empty');
   var playerBar = document.getElementById('player-bar');
@@ -292,8 +286,7 @@
     if (histIdx !== null) {
       var h = streamHistory[parseInt(histIdx, 10)];
       if (h) {
-        currentData = h;
-        startPlayback(h.playableUrl, h.name);
+        openStream({ name: h.name, url: h.inputUrl });
       }
       return;
     }
@@ -387,169 +380,42 @@
   modalWatch.addEventListener('click', function() {
     var match = matchModal._match;
     matchModal.style.display = 'none';
-    if (match) resolveAndPlayMatch(match);
+    if (match) openStream(match);
   });
 
   matchModal.addEventListener('click', function(e) {
     if (e.target === matchModal) matchModal.style.display = 'none';
   });
 
-  /* === STREAM RESOLUTION === */
-  function resolveAndPlayMatch(match) {
-    if (resolvingMatchId) return;
-    resolvingMatchId = match.matchId;
-    renderList();
-    playerEmpty.style.display = 'none';
-    playerLoading.style.display = 'flex';
+  /* === STREAM PLAYBACK VIA IFRAME === */
+  var VERCEL_BASE = 'https://xionlive.vercel.app';
+  var playerIframe = document.getElementById('player-iframe');
+  var iframeBack = document.getElementById('iframe-back');
 
-    console.log('[xion] resolveAndPlayMatch:', match.name);
-    window.resolveXionMatch(match.url)
-    .then(function(d) {
-      console.log('[xion] resolved:', JSON.stringify(d));
-      if (d.streams && d.streams.length) {
-        if (d.streams.length === 1) resolveAndPlay(match, d.streams[0].streamId, d);
-        else showStreamPicker(d.streams, match, d);
-      } else if (d.playableUrl) {
-        currentData = { playableUrl: d.playableUrl, directUrl: d.streamUrl || match.url, referer: d.referer || '', name: d.name || match.name, inputUrl: match.url };
-        addToHistory(d.name || match.name, match.url, d.playableUrl);
-        startPlayback(d.playableUrl, d.name || match.name);
-      } else {
-        throw new Error('No streams found');
-      }
-    })
-    .catch(function(e) {
-      console.error('[xion] resolve error:', e.message || e);
-      playerLoading.style.display = 'none';
-      playerEmpty.style.display = 'flex';
-      showToast(e.message || 'Failed to resolve stream');
-    })
-    .finally(function() {
-      resolvingMatchId = null;
-      renderList();
-    });
-  }
-
-  function resolveAndPlay(match, streamId, listData) {
-    window.resolveXionMatch(match.url, streamId)
-    .then(function(d) {
-      currentData = { playableUrl: d.playableUrl, directUrl: d.streamUrl || match.url, referer: d.referer || '', name: d.name || match.name, inputUrl: match.url };
-      addToHistory(d.name || match.name, match.url, d.playableUrl);
-      startPlayback(d.playableUrl, d.name || match.name);
-    })
-    .catch(function(e) { showToast(e.message || 'Failed'); })
-    .finally(function() { resolvingMatchId = null; renderList(); });
-  }
-
-  function showStreamPicker(streams, match, listData) {
-    var picker = document.getElementById('stream-picker');
-    var list = document.getElementById('stream-picker-list');
-    list.innerHTML = '';
-    streams.forEach(function(s) {
-      var btn = document.createElement('button');
-      btn.textContent = s.name || ('Stream ' + s.streamId);
-      btn.addEventListener('click', function() {
-        picker.style.display = 'none';
-        resolvingMatchId = match.matchId;
-        renderList();
-        resolveAndPlay(match, s.streamId, listData);
-      });
-      list.appendChild(btn);
-    });
-    picker.style.display = 'flex';
-    list.querySelector('button').focus();
-  }
-
-  function closeStreamPicker() {
-    document.getElementById('stream-picker').style.display = 'none';
-  }
-
-  /* === PLAYBACK === */
-  function startPlayback(url, name) {
-    if (hls) { hls.destroy(); hls = null; }
+  function openStream(match) {
     playerEmpty.style.display = 'none';
     playerLoading.style.display = 'none';
     playerBar.style.display = 'flex';
-    streamInfo.textContent = name || 'Live';
-    video.style.display = 'block';
-
-    console.log('[xion] startPlayback:', url.substring(0, 120));
-
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        enableWorker: true, lowLatencyMode: true, backBufferLength: 30,
-        maxBufferLength: 60, maxMaxBufferLength: 120,
-        startFragPrefetch: true, liveSyncDurationCount: 4,
-        liveMaxLatencyDurationCount: 8, liveDurationInfinity: true,
-        highBufferWatchdogPeriod: 2, overrideNative: true
-      });
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, function() {
-        console.log('[xion] HLS parsed');
-        video.play().catch(function(e) { console.warn('[xion] autoplay blocked:', e.message); });
-      });
-      hls.on(Hls.Events.ERROR, function(_, d) {
-        console.error('[xion] HLS error:', d.type, d.details, d.fatal);
-        if (d.fatal) {
-          if (d.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
-          else showToast('Playback error: ' + d.details);
-        }
-      });
-    } else {
-      video.src = url;
-      video.play().catch(function(e) { console.warn('[xion] native play failed:', e.message); });
-    }
+    streamInfo.textContent = match.name || 'Live';
+    playerIframe.style.display = 'block';
+    iframeBack.style.display = 'flex';
+    playerIframe.src = VERCEL_BASE + '/?match=' + encodeURIComponent(match.url);
+    addToHistory(match.name || match.name, match.url, match.url);
   }
 
-  /* === HISTORY === */
-  function addToHistory(name, inputUrl, playableUrl) {
-    var item = { name: name, inputUrl: inputUrl, playableUrl: playableUrl, time: Date.now() };
-    streamHistory = streamHistory.filter(function(h) { return h.inputUrl !== inputUrl; });
-    streamHistory.unshift(item);
-    if (streamHistory.length > 30) streamHistory = streamHistory.slice(0, 30);
-    localStorage.setItem('xion_history', JSON.stringify(streamHistory));
-    renderList();
-  }
+  iframeBack.addEventListener('click', function() {
+    playerIframe.style.display = 'none';
+    playerIframe.src = 'about:blank';
+    iframeBack.style.display = 'none';
+    playerEmpty.style.display = 'flex';
+    playerBar.style.display = 'none';
+  });
+
+  /* === MATCH DETAIL MODAL === */
 
   /* === INIT === */
   renderList();
   loadMatches();
   setInterval(loadMatches, 30000);
-
-  /* === CHROMECAST === */
-  var castSession = null;
-
-  function initCast() {
-    if (!window.chrome || !window.chrome.cast || !window.cast || !window.cast.framework) {
-      setTimeout(initCast, 500);
-      return;
-    }
-    try {
-      var castContext = cast.framework.CastContext.getInstance();
-      castContext.setOptions({
-        receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
-        autoJoinPolicy: chrome.cast.AutoJoinPolicy.SCOPED_THIS_TAB_ONLY
-      });
-      castContext.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, function(e) {
-        if (e.sessionState === cast.framework.SessionState.SESSION_STARTED) {
-          castSession = castContext.getCurrentSession();
-          document.getElementById('cast-btn').style.display = '';
-          document.getElementById('cast-btn').classList.add('active');
-        } else if (e.sessionState === cast.framework.SessionState.SESSION_ENDED) {
-          castSession = null;
-          document.getElementById('cast-btn').classList.remove('active');
-        }
-      });
-      var castBtn = document.getElementById('cast-btn');
-      castBtn.style.display = '';
-      castBtn.onclick = function() {
-        if (castSession) castSession.endSession(true);
-        else castContext.requestSession().catch(function() { showToast('No Chromecast found'); });
-      };
-    } catch(e) {
-      setTimeout(initCast, 2000);
-    }
-  }
-  setTimeout(initCast, 1500);
 
 })();

@@ -10,33 +10,30 @@
   <script src="js/match-parser.js"></script>
   <script src="js/xion-resolver.js"></script>
   <script src="js/logos.js"></script>
-  <script>window.__onGCastApiAvailable=function(available){if(available){console.log('[xion] Cast API available')}}</script>
-  <script src="https://www.gstatic.com/cv2/cast_sender.js?loadCastFramework=1"></script>
 </head>
 <body>
 
   <!-- FULL SCREEN PLAYER -->
   <div class="tv-layout" id="tv-layout">
     <div class="tv-player" id="tv-player">
-      <video id="video" playsinline webkit-playsinline></video>
       <div class="tv-player-empty" id="player-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="80" height="80"><path d="M8 5v14l11-7z"/></svg>
         <p>Select a match to start watching</p>
       </div>
+      <iframe id="player-iframe" allowfullscreen="true" allow="autoplay; fullscreen; media-capture" style="display:none;position:absolute;inset:0;width:100%;height:100%;border:none;z-index:100;background:#000"></iframe>
+      <button class="tv-iframe-back" id="iframe-back" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M15 18l-6-6 6-6"/></svg>
+        Back
+      </button>
       <div class="tv-player-loading" id="player-loading" style="display:none">
         <div class="spinner"></div>
-        <p>Resolving stream...</p>
+        <p>Loading stream...</p>
       </div>
     </div>
 
     <div class="tv-player-bar" id="player-bar" style="display:none">
       <div class="live-dot"></div>
       <span class="stream-info" id="stream-info">Live</span>
-      <div class="tv-player-controls">
-        <button id="cast-btn" title="Cast" style="display:none">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22"><path d="M2 16.1A5 5 0 015.9 20M2 12.05A9 9 0 019.95 20M2 8V6a2 2 0 012-2h16a2 2 0 012 2v12a2 2 0 01-2 2h-6"/><circle cx="2" cy="20" r="1" fill="currentColor"/></svg>
-        </button>
-      </div>
     </div>
   </div>
 
@@ -94,17 +91,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M8 5v14l11-7z"/></svg>
         Watch Live
       </button>
-    </div>
-  </div>
-
-  <!-- STREAM PICKER MODAL -->
-  <div class="tv-modal-overlay" id="stream-picker" style="display:none">
-    <div class="tv-modal">
-      <button class="tv-modal-close" onclick="closeStreamPicker()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M18 6L6 18M6 6l12 12"/></svg>
-      </button>
-      <div class="tv-modal-title">Choose stream</div>
-      <div class="tv-modal-list" id="stream-picker-list"></div>
     </div>
   </div>
 
