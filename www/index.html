@@ -390,9 +390,10 @@
       if (!url) return;
       hideError(); playBtn.disabled=true; playBtn.textContent='Resolving...'; closeMobilePanel();
       var defaultReferer = 'https://jack27eo.mpgreatestclgczbmiddle.my/';
+      var isStandalone = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:');
       if (mode==='m3u8'||(mode==='auto'&&isM3u8(url))) {
         var sn=url.split('/').pop().split('?')[0]||'stream';
-        var proxyUrl='xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
+        var proxyUrl=isStandalone?url:'xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
         currentData={playableUrl:proxyUrl,directUrl:url,referer:defaultReferer,name:sn,inputUrl:url};
         addToHistory(sn,url,proxyUrl); startPlayback(proxyUrl,sn); playBtn.disabled=false; playBtn.textContent='Play';
       } else if (mode==='match'||(mode==='auto'&&isMatchPage(url))) {
@@ -404,7 +405,7 @@
         .catch(function(e){showError(e.message||'Failed')}).finally(function(){playBtn.disabled=false;playBtn.textContent='Play'});
       } else {
         var sn=url.split('/').pop().split('?')[0]||'stream';
-        var proxyUrl='xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
+        var proxyUrl=isStandalone?url:'xion://proxy?url='+encodeURIComponent(url)+'&referer='+encodeURIComponent(defaultReferer);
         currentData={playableUrl:proxyUrl,directUrl:url,referer:defaultReferer,name:sn,inputUrl:url};
         addToHistory(sn,url,proxyUrl); startPlayback(proxyUrl,sn); playBtn.disabled=false; playBtn.textContent='Play';
       }
@@ -557,27 +558,42 @@
       var mcount = document.getElementById('m-match-count');
       count.textContent = 'Loading...';
       mcount.textContent = 'Loading...';
-      console.log('[xion] loadMatches: fetching directly from API');
+      console.log('[xion] loadMatches: fetching from API');
 
       var workingHost = null;
       var allMatches = [];
       var completed = 0;
-      var total = 0;
+
+      var isStandalone = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:');
+      console.log('[xion] standalone mode:', isStandalone, 'protocol:', window.location.protocol);
 
       function tryHost(hostIdx, sportIdx) {
         if (hostIdx >= API_HOSTS.length) {
-          finishLoad();
+          completed++;
+          if (completed >= SPORT_TYPES.length) finishLoad();
+          else tryNextSport();
           return;
         }
         var host = API_HOSTS[hostIdx];
         var sport = SPORT_TYPES[sportIdx];
         var url = host + '/api/match/live?sportType=' + sport;
-        console.log('[xion] fetching ' + url);
+        console.log('[xion] fetching sport=' + sport + ' from ' + host);
 
         var controller = new AbortController();
-        var timeout = setTimeout(function() { controller.abort(); }, 5000);
+        var timeout = setTimeout(function() { controller.abort(); }, 8000);
 
-        fetch('xion://proxy?url=' + encodeURIComponent(url) + '&referer=' + encodeURIComponent(API_HEADERS.Referer) + '&origin=' + encodeURIComponent(API_HEADERS.Origin), { signal: controller.signal })
+        var fetchPromise;
+        if (isStandalone) {
+          fetchPromise = fetch(url, {
+            headers: API_HEADERS,
+            signal: controller.signal,
+            redirect: 'follow'
+          });
+        } else {
+          fetchPromise = fetch('xion://proxy?url=' + encodeURIComponent(url) + '&referer=' + encodeURIComponent(API_HEADERS.Referer) + '&origin=' + encodeURIComponent(API_HEADERS.Origin), { signal: controller.signal });
+        }
+
+        fetchPromise
           .then(function(r) {
             clearTimeout(timeout);
             if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -587,30 +603,22 @@
             var matches = window.parseMatchesFromBuffer(buf, sport);
             console.log('[xion] host=' + hostIdx + ' sport=' + sport + ' got ' + matches.length + ' matches');
             if (!workingHost) workingHost = host;
-            for (var i = 0; i < matches.length; i++) {
-              allMatches.push(matches[i]);
-            }
+            for (var i = 0; i < matches.length; i++) allMatches.push(matches[i]);
             completed++;
-            nextSportOrHost();
+            if (completed >= SPORT_TYPES.length) finishLoad();
+            else tryNextSport();
           })
           .catch(function(e) {
             clearTimeout(timeout);
-            console.warn('[xion] fetch failed host=' + hostIdx + ' sport=' + sport + ': ' + e.message);
-            if (sportIdx === 0) {
-              tryHost(hostIdx + 1, 0);
-            } else {
-              nextSportOrHost();
-            }
+            console.warn('[xion] fetch failed sport=' + sport + ' host=' + hostIdx + ': ' + e.message);
+            tryHost(hostIdx + 1, sportIdx);
           });
       }
 
-      function nextSportOrHost() {
+      function tryNextSport() {
         var nextIdx = completed;
-        if (nextIdx >= SPORT_TYPES.length) {
-          finishLoad();
-          return;
-        }
-        tryHost(workingHost ? API_HOSTS.indexOf(workingHost) : 0, nextIdx);
+        if (nextIdx >= SPORT_TYPES.length) { finishLoad(); return; }
+        tryHost(0, nextIdx);
       }
 
       function finishLoad() {
@@ -635,7 +643,6 @@
         renderMobileMatches();
       }
 
-      total = SPORT_TYPES.length;
       tryHost(0, 0);
     }
 
@@ -732,9 +739,13 @@
       var el = document.getElementById('server-status');
       el.textContent='Checking API...';
       var url = API_HOSTS[0] + '/api/match/live?sportType=1';
+      var isStandalone = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:');
       var controller = new AbortController();
       var timeout = setTimeout(function() { controller.abort(); }, 5000);
-      fetch('xion://proxy?url=' + encodeURIComponent(url) + '&referer=' + encodeURIComponent(API_HEADERS.Referer) + '&origin=' + encodeURIComponent(API_HEADERS.Origin), { signal: controller.signal })
+      var fetchPromise = isStandalone
+        ? fetch(url, { headers: API_HEADERS, signal: controller.signal })
+        : fetch('xion://proxy?url=' + encodeURIComponent(url) + '&referer=' + encodeURIComponent(API_HEADERS.Referer) + '&origin=' + encodeURIComponent(API_HEADERS.Origin), { signal: controller.signal });
+      fetchPromise
         .then(function(r) {
           clearTimeout(timeout);
           if (!r.ok) throw new Error('HTTP ' + r.status);

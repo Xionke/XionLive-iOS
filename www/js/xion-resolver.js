@@ -233,16 +233,24 @@
     var params = "url=" + encodeURIComponent(url);
     if (headers["Referer"]) params += "&referer=" + encodeURIComponent(headers["Referer"]);
     if (headers["Origin"]) params += "&origin=" + encodeURIComponent(headers["Origin"]);
-    if (Object.keys(headers).length > 2) params += "&headers=" + encodeURIComponent(JSON.stringify(headers));
     var proxyUrl = "xion://proxy?" + params;
     var resp = await fetch(proxyUrl, { method: opts.method || "GET" });
     return resp;
   }
 
   async function apiFetch(url, headers) {
+    var isStandalone = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:');
+    if (isStandalone) {
+      try {
+        var resp = await fetch(url, { headers: headers, redirect: "follow" });
+        return resp;
+      } catch (e) {
+        log("direct fetch failed, trying proxy:", e.message);
+      }
+    }
     try {
-      var resp = await proxyFetch(url, { headers: headers });
-      return resp;
+      var resp2 = await proxyFetch(url, { headers: headers });
+      return resp2;
     } catch (e) {
       log("proxyFetch failed, trying direct:", e.message);
       return fetch(url, { headers: headers, redirect: "follow" });
@@ -261,7 +269,9 @@
         var clean = new URL(input);
         clean.searchParams.delete("referer");
         var name = decodeURIComponent(u.pathname.split("/").pop() || "Brugge").replace(/\.m3u8.*$/i, "") || "XionLive";
-        var playableUrl = "xion://proxy?url=" + encodeURIComponent(clean.href) + "&referer=" + encodeURIComponent(referer);
+        var playableUrl = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:')
+          ? clean.href
+          : "xion://proxy?url=" + encodeURIComponent(clean.href) + "&referer=" + encodeURIComponent(referer);
         return { name: name, streamUrl: clean.href, referer: referer, playableUrl: playableUrl };
       } catch (e) {
         throw new Error("invalid m3u8 url");
@@ -399,7 +409,9 @@
     var token = encodeURIComponent(btoa(String.fromCharCode.apply(null, new Uint8Array(encrypted)))) + "a";
     var signedUrl = streamParsed.origin + "/token-" + token + streamParsed.pathname + streamParsed.search;
 
-    var playableUrl = "xion://proxy?url=" + encodeURIComponent(signedUrl) + "&referer=" + encodeURIComponent(playerReferer);
+    var playableUrl = (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:')
+      ? signedUrl
+      : "xion://proxy?url=" + encodeURIComponent(signedUrl) + "&referer=" + encodeURIComponent(playerReferer);
 
     log("resolved stream:", stream.name);
     return {
