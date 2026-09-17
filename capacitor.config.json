@@ -30,5 +30,11 @@
     "backgroundColor": "#0a0a0c",
     "allowsBackForwardNavigationGestures": true,
     "preferredContentMode": "mobile"
+  },
+  "android": {
+    "backgroundColor": "#0a0a0c",
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
   }
 }

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">XionLive</string>
+    <string name="title_activity_main">XionLive</string>
+    <string name="package_name">com.xionlive.brugge</string>
+    <string name="custom_url_scheme">com.xionlive.brugge</string>
+</resources>
