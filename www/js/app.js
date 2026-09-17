@@ -163,16 +163,17 @@
     order.sort(function(a, b) {
       function lp(l) {
         l = l.toLowerCase();
-        if (l.indexOf("jupiler") !== -1 || l.indexOf("belgian") !== -1 || l.indexOf("pro league") !== -1) return 1;
-        if (l.indexOf("primera") !== -1 || l.indexOf("la liga") !== -1 || l.indexOf("spain") !== -1) return 2;
-        if (l.indexOf("champion") !== -1 && l.indexOf("league") !== -1) return 3;
-        if (l.indexOf("europa") !== -1 && l.indexOf("league") !== -1) return 4;
+        if (l.indexOf("jupiler") !== -1 || l.indexOf("belgian pro") !== -1 || l.indexOf("pro league") !== -1) return 1;
+        if (l.indexOf("champion") !== -1 && l.indexOf("league") !== -1) return 2;
+        if (l.indexOf("europa") !== -1 && l.indexOf("league") !== -1) return 3;
         if (l.indexOf("conference") !== -1 && l.indexOf("league") !== -1) return 4;
         if (l.indexOf("premier") !== -1) return 5;
-        if (l.indexOf("ligue 1") !== -1) return 6;
+        if (l.indexOf("primera") !== -1 || l.indexOf("la liga") !== -1 || l.indexOf("spain") !== -1) return 6;
         if (l.indexOf("serie a") !== -1 && l.indexOf("serie c") === -1) return 7;
         if (l.indexOf("bundesliga") !== -1) return 8;
-        if (l.indexOf("eredivisie") !== -1) return 9;
+        if (l.indexOf("ligue 1") !== -1) return 9;
+        if (l.indexOf("eredivisie") !== -1) return 10;
+        if (l.indexOf("primeira") !== -1 || l.indexOf("liga portugal") !== -1) return 11;
         return 20;
       }
       var pa = lp(a), pb = lp(b);
