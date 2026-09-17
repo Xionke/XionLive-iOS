@@ -126,6 +126,8 @@
       }
       matchData = merged;
       renderContent();
+      XionLogos.fetchAllTeamLogos(matchData);
+      setTimeout(function() { renderContent(); }, 2000);
     }
 
     tryHost(0, 0);
